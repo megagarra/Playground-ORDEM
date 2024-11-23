@@ -1,30 +1,47 @@
-# Boulder AI Assistant (Whatsapp Bot) 🚀
+# WhatsApp Service Order Bot
 
-[<img src="/demo/boulder_ai_generated_avatar.jpg" width="350"/>]()
-Generated using [Ideogram](https://ideogram.ai/g/D1k_F8bDRne7WTxy1QeyMA/2)
+![WhatsApp Service Order Bot](https://img.shields.io/badge/WhatsApp-Bot-green)
+![Node.js](https://img.shields.io/badge/Node.js-14.0%2B-blue)
+![OpenAI](https://img.shields.io/badge/OpenAI-API-blue)
 
-## Description
+## Table of Contents
 
-This is a personal playground project, that uses OpenAI's Assistant Api, DALL-E and ElevenLabs text to speech, in hacky ways, tied together with `whatsapp-web.js`
+- [Visão Geral](#visão-geral)
+- [Recursos](#recursos)
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação](#instalação)
+- [Configuração](#configuração)
+- [Uso](#uso)
+- [Estrutura do Projeto](#estrutura-do-projeto)
+- [Funções Disponíveis](#funções-disponíveis)
+- [Contribuição](#contribuição)
+- [Licença](#licença)
 
-## Demo
+## Visão Geral
 
-### Screenshots
+O **WhatsApp Service Order Bot** é uma aplicação Node.js que integra o WhatsApp Web com a API da OpenAI para gerenciar ordens de serviço de forma automatizada. Utilizando o WhatsApp como interface de comunicação, o bot permite criar, consultar, atualizar e excluir ordens de serviço diretamente através de mensagens de WhatsApp.
 
-[<img src="/demo/screenshot_1.jpg" width="250"/>]()
-[<img src="/demo/screenshot_2.jpg" width="250"/>]()
+## Recursos
 
-### Video
+- **Integração com WhatsApp Web**: Autenticação via QR Code e interação em tempo real.
+- **Chat Inteligente**: Utiliza o modelo GPT-4 da OpenAI para entender e processar mensagens dos usuários.
+- **CRUD de Ordens de Serviço**: Criação, leitura, atualização e exclusão de ordens de serviço através de comandos de texto.
+- **Armazenamento Local**: Gerenciamento de sessões e histórico de conversas.
+- **Geração de QR Code**: Exibição do QR Code no terminal para autenticação rápida.
 
-[Demo](https://github.com/Laetro-dev/LAE-Laetro/assets/26346408/62b6b81e-120b-446a-8b2c-d02a26aa67b0)
+## Pré-requisitos
 
-## Features
+Antes de começar, você precisará ter instalado em sua máquina:
 
--   [OpenAI's Assistant](https://platform.openai.com/docs/assistants/overview) name Boulder persona inspired by [Bastion Game](<https://en.wikipedia.org/wiki/Bastion_(video_game)>)
--   Message handling
--   Reacting to messages using OpenAI [function](https://platform.openai.com/docs/guides/function-calling) calling capability
--   [Speech to text](https://platform.openai.com/docs/guides/speech-to-text) which uses `whisper-1` model under the hood.
--   [Text to speech](https://elevenlabs.io/voice-cloning) processing, customer voice inspired by Rucks from Bastion using ElevenLabs voice cloning
--   image generation using DALLE-2 eg.. `/imagine an astronaut lounging in space, tropical, pixel art`
--   Bot can respond to messages in 1on1 or in groups
--   Automating whatsapp using [https://wwebjs.dev/](whatsapp-web.js)
+- [Node.js](https://nodejs.org/) (versão 14 ou superior)
+- [npm](https://www.npmjs.com/) (gerenciador de pacotes do Node.js)
+- Conta na [OpenAI](https://openai.com/) com acesso à API
+- Servidor backend para gerenciar as ordens de serviço (API RESTful)
+
+## Instalação
+
+1. **Clone o Repositório**
+
+   ```bash
+   git clone https://github.com/seu-usuario/whatsapp-service-order-bot.git
+   cd whatsapp-service-order-bot
