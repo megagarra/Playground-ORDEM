@@ -162,7 +162,7 @@ async function handleIncomingMessage(message) {
 
         // Envia a conversa completa para o assistente com as funções disponíveis
         const response = await openai.chat.completions.create({
-            model: "gpt-4", // Modelo correto
+            model: "gpt-4o-mini", // Modelo correto
             messages: conversation,
             functions: functions,
             function_call: "auto", // Permite que o modelo escolha quando chamar uma função
