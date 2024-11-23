@@ -1,6 +1,6 @@
 {
 	"compilerOptions": {
-		"strict": false,
+		"strict": true,
 		"noImplicitAny": false,
 		"noFallthroughCasesInSwitch": false,
 		"allowJs": true,
