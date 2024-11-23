@@ -1,15 +1,26 @@
-import process from 'process'
+// src/config.js
 
-// Environment variables
-import dotenv from 'dotenv'
-dotenv.config()
+import process from 'process';
+import dotenv from 'dotenv';
 
-// Config
+// Carrega as variáveis de ambiente do arquivo .env
+dotenv.config();
+
+// Validação das variáveis de ambiente
+const requiredEnvVars = ['WHATSAPP_NUMBER', 'OPENAI_API_KEY', 'ASSISTANT_ID'];
+
+requiredEnvVars.forEach((varName) => {
+  if (!process.env[varName]) {
+    console.error(`Erro: A variável de ambiente ${varName} não está definida.`);
+    process.exit(1);
+  }
+});
+
+// Configuração utilizando as variáveis de ambiente
 export const config = {
-  whatsAppNumber: '5511958447106',
-  openAIAPIKey: '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',
-  assistantId: 'asst_vKN4iBra51u0TEWYEyfjw0eD'
-	
-}
+  whatsAppNumber: process.env.WHATSAPP_NUMBER,
+  openAIAPIKey: process.env.OPENAI_API_KEY,
+  assistantId: process.env.ASSISTANT_ID,
+};
 
-export default config
+export default config;
