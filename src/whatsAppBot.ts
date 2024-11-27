@@ -374,19 +374,29 @@ const start = async () => {
 
   client.on(Events.MESSAGE_RECEIVED, async (message) => {
     try {
-        // Ignorar mensagens de grupos
-        const chat = await message.getChat();
-        if (chat.isGroup) return;
+        console.log('Mensagem recebida:', message.body);
 
         // Ignorar mensagens enviadas pelo próprio bot
-        if (message.fromMe) return;
+        if (message.fromMe) {
+            console.log('Mensagem ignorada por ser enviada pelo bot.');
+            return;
+        }
+
+        // Ignorar mensagens de grupos
+        const chat = await message.getChat();
+        if (chat.isGroup) {
+            console.log('Mensagem ignorada por ser de grupo.');
+            return;
+        }
 
         // Processar mensagens de usuários individuais
+        console.log('Mensagem processada:', message.body);
         await handleIncomingMessage(message);
     } catch (error) {
         console.error('Erro ao processar mensagem recebida:', error);
     }
 });
+
 
 
   client.initialize();
