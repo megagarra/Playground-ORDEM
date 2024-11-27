@@ -11,8 +11,6 @@ import EventEmitter from 'events';
 
 dotenv.config();
 
-console.log(config.API_BASE_URL, config.whatsAppNumber, 'TESTE')
-
 // Configura a conexão com a OpenAI usando o ID do assistente específico
 const openai = new OpenAI({ apiKey: config.openAIAPIKey });
 
@@ -375,16 +373,21 @@ const start = async () => {
   });
 
   client.on(Events.MESSAGE_RECEIVED, async (message) => {
-      if (message.from === constants.statusBroadcast || message.fromMe) return;
+    try {
+        // Ignorar mensagens de grupos
+        const chat = await message.getChat();
+        if (chat.isGroup) return;
 
-      if ((await message.getChat()).isGroup) {
-          const phoneNumber = `${config.whatsAppNumber}@c.us`;
-          const mentionIds = message.mentionedIds.map(id => id.toString());
-          if (mentionIds.includes(phoneNumber)) await handleIncomingMessage(message);
-      } else {
-          await handleIncomingMessage(message);
-      }
-  });
+        // Ignorar mensagens enviadas pelo próprio bot
+        if (message.fromMe) return;
+
+        // Processar mensagens de usuários individuais
+        await handleIncomingMessage(message);
+    } catch (error) {
+        console.error('Erro ao processar mensagem recebida:', error);
+    }
+});
+
 
   client.initialize();
 };
