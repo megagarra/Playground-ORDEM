@@ -11,7 +11,7 @@ import EventEmitter from 'events';
 
 dotenv.config();
 
-const API_BASE_URL = process.env.API_BASE_URL;
+console.log(config.API_BASE_URL, config.whatsAppNumber, 'TESTE')
 
 // Configura a conexão com a OpenAI usando o ID do assistente específico
 const openai = new OpenAI({ apiKey: config.openAIAPIKey });
