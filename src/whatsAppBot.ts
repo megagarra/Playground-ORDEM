@@ -1,7 +1,7 @@
-
+// bot.ts
 import axios from 'axios';
 import qrcode from 'qrcode';
-import { Client, Message, Events, LocalAuth } from '@periskope/whatsapp-web.js';
+import { Client, Message, Chat, LocalAuth } from '@periskope/whatsapp-web.js';
 import OpenAI from 'openai';
 import constants from './constants';
 import * as cli from './cli/ui';
@@ -9,58 +9,60 @@ import config from './config';
 import dotenv from 'dotenv';
 import EventEmitter from 'events';
 
+
 dotenv.config();
 
-// Configura a conexão com a OpenAI usando o ID do assistente específico
+// Configuração da API OpenAI
 const openai = new OpenAI({ apiKey: config.openAIAPIKey });
 
 // Mapeamento de conversas ativas por usuário
-const activeChats = new Map();
+const activeChats = new Map<string, any>();
 
+// Emissor de eventos para QR Code
 const qrEmitter = new EventEmitter();
 
-// Definição das funções disponíveis
+// Definição das funções disponíveis para o assistente
 const functions = [
   {
-    "name": "create_order_service",
-    "description": "Cria uma nova ordem de serviço com os detalhes fornecidos.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "tipo_servico": {
-          "type": "string",
-          "description": "Tipo de serviço a ser realizado."
+    name: "create_order_service",
+    description: "Cria uma nova ordem de serviço com os detalhes fornecidos.",
+    parameters: {
+      type: "object",
+      properties: {
+        tipo_servico: {
+          type: "string",
+          description: "Tipo de serviço a ser realizado."
         },
-        "nome_cliente": {
-          "type": "string",
-          "description": "Nome do cliente que solicitou o serviço."
+        nome_cliente: {
+          type: "string",
+          description: "Nome do cliente que solicitou o serviço."
         },
-        "endereco_cliente": {
-          "type": "string",
-          "description": "Endereço do cliente."
+        endereco_cliente: {
+          type: "string",
+          description: "Endereço do cliente."
         },
-        "data_hora_agendado": {
-          "type": "string",
-          "description": "Apenas Data para ser agendadas para o serviço (formato YYYY-MM-DD)."
+        data_hora_agendado: {
+          type: "string",
+          description: "Data para agendamento do serviço (formato YYYY-MM-DD)."
         },
-        "hora": {
-          "type": "string",
-          "description": "Hora específica do serviço (formato HH:MM)."
+        hora: {
+          type: "string",
+          description: "Hora específica do serviço (formato HH:MM)."
         },
-        "descricao_servico": {
-          "type": "string",
-          "description": "Descrição detalhada do serviço a ser realizado."
+        descricao_servico: {
+          type: "string",
+          description: "Descrição detalhada do serviço a ser realizado."
         },
-        "funcionario_responsavel": {
-          "type": "string",
-          "description": "Nome do funcionário responsável pelo serviço."
+        funcionario_responsavel: {
+          type: "string",
+          description: "Nome do funcionário responsável pelo serviço."
         },
-        "status": {
-          "type": "string",
-          "description": "Status atual da ordem de serviço."
+        status: {
+          type: "string",
+          description: "Status atual da ordem de serviço."
         }
       },
-      "required": [
+      required: [
         "tipo_servico",
         "nome_cliente",
         "endereco_cliente",
@@ -71,265 +73,265 @@ const functions = [
     }
   },
   {
-    "name": "get_order_service",
-    "description": "Recupera os detalhes de uma ordem de serviço específica pelo ID.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "order_id": {
-          "type": "string",
-          "description": "ID único da ordem de serviço."
+    name: "get_order_service",
+    description: "Recupera os detalhes de uma ordem de serviço específica pelo ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        order_id: {
+          type: "string",
+          description: "ID único da ordem de serviço."
         }
       },
-      "required": ["order_id"]
+      required: ["order_id"]
     }
   },
   {
-    "name": "update_order_service",
-    "description": "Atualiza os detalhes de uma ordem de serviço existente.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "order_id": {
-          "type": "string",
-          "description": "ID único da ordem de serviço a ser atualizada."
+    name: "update_order_service",
+    description: "Atualiza os detalhes de uma ordem de serviço existente.",
+    parameters: {
+      type: "object",
+      properties: {
+        order_id: {
+          type: "string",
+          description: "ID único da ordem de serviço a ser atualizada."
         },
-        "tipo_servico": {
-          "type": "string",
-          "description": "Tipo de serviço a ser realizado."
+        tipo_servico: {
+          type: "string",
+          description: "Tipo de serviço a ser realizado."
         },
-        "nome_cliente": {
-          "type": "string",
-          "description": "Nome do cliente que solicitou o serviço."
+        nome_cliente: {
+          type: "string",
+          description: "Nome do cliente que solicitou o serviço."
         },
-        "endereco_cliente": {
-          "type": "string",
-          "description": "Endereço do cliente."
+        endereco_cliente: {
+          type: "string",
+          description: "Endereço do cliente."
         },
-        "data_hora_agendado": {
-          "type": "string",
-          "description": "Data e hora agendadas para o serviço (formato YYYY-MM-DD HH:MM)."
+        data_hora_agendado: {
+          type: "string",
+          description: "Data e hora agendadas para o serviço (formato YYYY-MM-DD HH:MM)."
         },
-        "hora": {
-          "type": "string",
-          "description": "Hora específica do serviço (formato HH:MM)."
+        hora: {
+          type: "string",
+          description: "Hora específica do serviço (formato HH:MM)."
         },
-        "descricao_servico": {
-          "type": "string",
-          "description": "Descrição detalhada do serviço a ser realizado."
+        descricao_servico: {
+          type: "string",
+          description: "Descrição detalhada do serviço a ser realizado."
         },
-        "funcionario_responsavel": {
-          "type": "string",
-          "description": "Nome do funcionário responsável pelo serviço."
+        funcionario_responsavel: {
+          type: "string",
+          description: "Nome do funcionário responsável pelo serviço."
         },
-        "status": {
-          "type": "string",
-          "description": "Status atual da ordem de serviço."
+        status: {
+          type: "string",
+          description: "Status atual da ordem de serviço."
         }
       },
-      "required": ["order_id"]
+      required: ["order_id"]
     }
   },
   {
-    "name": "delete_order_service",
-    "description": "Exclui uma ordem de serviço específica pelo ID.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "order_id": {
-          "type": "string",
-          "description": "ID único da ordem de serviço a ser excluída."
+    name: "delete_order_service",
+    description: "Exclui uma ordem de serviço específica pelo ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        order_id: {
+          type: "string",
+          description: "ID único da ordem de serviço a ser excluída."
         }
       },
-      "required": ["order_id"]
+      required: ["order_id"]
     }
   },
   {
-    "name": "get_all_order_services",
-    "description": "Recupera uma lista de todas as ordens de serviço existentes.",
-    "parameters": {
-      "type": "object",
-      "properties": {}
+    name: "get_all_order_services",
+    description: "Recupera uma lista de todas as ordens de serviço existentes.",
+    parameters: {
+      type: "object",
+      properties: {}
     }
   }
 ];
 
 // Função para interagir com o assistente e processar a mensagem recebida
-async function handleIncomingMessage(message) {
-    const userId = message.from;
-    const content = message.body;
+async function handleIncomingMessage(message: Message) {
+  const userId = message.from;
+  const content = message.body;
 
-    try {
-        // Obter o histórico de mensagens do usuário ou inicializar um novo
-        let conversation = activeChats.get(userId) || [];
+  try {
+    // Obter o histórico de mensagens do usuário ou inicializar um novo
+    let conversation = activeChats.get(userId) || [];
 
-        // Adicionar a nova mensagem do usuário ao histórico
-        conversation.push({ role: 'user', content: content });
+    // Adicionar a nova mensagem do usuário ao histórico
+    conversation.push({ role: 'user', content: content });
 
-        // Envia a conversa completa para o assistente com as funções disponíveis
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini", // Modelo correto
-            messages: conversation,
-            functions: functions,
-            function_call: "auto", // Permite que o modelo escolha quando chamar uma função
-        });
+    // Envia a conversa completa para o assistente com as funções disponíveis
+    const response = await openai.chat.completions.create({
+      model: "gpt-4", // Modelo corrigido
+      messages: conversation,
+      functions: functions,
+      function_call: "auto", // Permite que o modelo escolha quando chamar uma função
+    });
 
-        const responseMessage = response.choices[0].message;
+    const responseMessage = response.choices[0].message;
 
-        // Verifica se o assistente chamou uma função
-        if (responseMessage.function_call) {
-            const functionName = responseMessage.function_call.name;
-            const functionArgs = JSON.parse(responseMessage.function_call.arguments);
+    // Verifica se o assistente chamou uma função
+    if (responseMessage.function_call) {
+      const functionName = responseMessage.function_call.name;
+      const functionArgs = JSON.parse(responseMessage.function_call.arguments);
 
-            let functionResponse;
+      let functionResponse: string;
 
-            switch (functionName) {
-                case 'create_order_service':
-                    functionResponse = await createOrderService(functionArgs);
-                    break;
-                case 'get_order_service':
-                    functionResponse = await getOrderService(functionArgs);
-                    break;
-                case 'update_order_service':
-                    functionResponse = await updateOrderService(functionArgs);
-                    break;
-                case 'delete_order_service':
-                    functionResponse = await deleteOrderService(functionArgs);
-                    break;
-                case 'get_all_order_services':
-                    functionResponse = await getAllOrderServices();
-                    break;
-                default:
-                    functionResponse = 'Função não reconhecida.';
-            }
+      switch (functionName) {
+        case 'create_order_service':
+          functionResponse = await createOrderService(functionArgs);
+          break;
+        case 'get_order_service':
+          functionResponse = await getOrderService(functionArgs);
+          break;
+        case 'update_order_service':
+          functionResponse = await updateOrderService(functionArgs);
+          break;
+        case 'delete_order_service':
+          functionResponse = await deleteOrderService(functionArgs);
+          break;
+        case 'get_all_order_services':
+          functionResponse = await getAllOrderServices();
+          break;
+        default:
+          functionResponse = 'Função não reconhecida.';
+      }
 
-            // Adicionar a chamada da função e a resposta ao histórico
-            conversation.push(responseMessage);
-            conversation.push({ role: 'function', name: functionName, content: functionResponse });
+      // Adicionar a chamada da função e a resposta ao histórico
+      conversation.push(responseMessage);
+      conversation.push({ role: 'function', name: functionName, content: functionResponse });
 
-            // Atualizar o histórico no Map
-            activeChats.set(userId, conversation);
+      // Atualizar o histórico no Map
+      activeChats.set(userId, conversation);
 
-            // Enviar a resposta da função de volta para o usuário
-            await message.reply(functionResponse);
+      // Enviar a resposta da função de volta para o usuário
+      await message.reply(functionResponse);
 
-        } else {
-            // Resposta normal do assistente
-            const respostaAI = responseMessage.content;
+    } else {
+      // Resposta normal do assistente
+      const respostaAI: string = responseMessage.content ?? 'Desculpe, não consegui processar sua solicitação.';
 
-            // Adicionar a resposta do assistente ao histórico
-            conversation.push(responseMessage);
+      // Adicionar a resposta do assistente ao histórico
+      conversation.push(responseMessage);
 
-            // Atualizar o histórico no Map
-            activeChats.set(userId, conversation);
+      // Atualizar o histórico no Map
+      activeChats.set(userId, conversation);
 
-            await message.reply(respostaAI);
-        }
-
-    } catch (error) {
-        console.error('Erro ao processar a mensagem:', error);
-        await message.reply('Erro ao processar a mensagem. Tente novamente mais tarde.');
+      await message.reply(respostaAI);
     }
+
+  } catch (error) {
+    console.error('Erro ao processar a mensagem:', error);
+    await message.reply('Erro ao processar a mensagem. Tente novamente mais tarde.');
+  }
 }
 
 // Funções CRUD para ordens de serviço usando axios
-async function createOrderService(details) {
-    try {
-        const response = await axios.post(`${config.API_BASE_URL}/ordens-servico`, {
-            tipo_servico: details.tipo_servico,
-            nome_cliente: details.nome_cliente,
-            endereco_cliente: details.endereco_cliente,
-            data_hora_agendado: details.data_hora_agendado,
-            hora: details.hora,
-            descricao_servico: details.descricao_servico,
-            funcionario_responsavel: details.funcionario_responsavel,
-            status: details.status || 'Pendente' // Valor padrão para status, se não fornecido
-        });
+async function createOrderService(details: any): Promise<string> {
+  try {
+    const response = await axios.post(`${config.API_BASE_URL}/ordens-servico`, {
+      tipo_servico: details.tipo_servico,
+      nome_cliente: details.nome_cliente,
+      endereco_cliente: details.endereco_cliente,
+      data_hora_agendado: details.data_hora_agendado,
+      hora: details.hora,
+      descricao_servico: details.descricao_servico,
+      funcionario_responsavel: details.funcionario_responsavel,
+      status: details.status || 'Pendente' // Valor padrão para status, se não fornecido
+    });
 
-        return `Ordem de Serviço criada com sucesso! ID: ${response.data.id}`;
-    } catch (error) {
-        console.error('Erro ao criar ordem de serviço:', error);
-        return 'Erro ao criar a ordem de serviço. Verifique os detalhes e tente novamente.';
-    }
+    return `Ordem de Serviço criada com sucesso! ID: ${response.data.id}`;
+  } catch (error: any) {
+    console.error('Erro ao criar ordem de serviço:', error);
+    return 'Erro ao criar a ordem de serviço. Verifique os detalhes e tente novamente.';
+  }
 }
 
-async function getOrderService({ order_id }) {
-    try {
-        const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
-        return `Detalhes da Ordem de Serviço:\n${formatOrderService(response.data)}`;
-    } catch (error) {
-        console.error('Erro ao buscar ordem de serviço:', error);
-        return 'Erro ao buscar a ordem de serviço. Verifique o ID e tente novamente.';
-    }
+async function getOrderService({ order_id }: { order_id: string }): Promise<string> {
+  try {
+    const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
+    return `Detalhes da Ordem de Serviço:\n${formatOrderService(response.data)}`;
+  } catch (error: any) {
+    console.error('Erro ao buscar ordem de serviço:', error);
+    return 'Erro ao buscar a ordem de serviço. Verifique o ID e tente novamente.';
+  }
 }
 
-async function getExistingOrderService(order_id) {
-    try {
-        const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
-        return response.data;
-    } catch (error) {
-        console.error('Erro ao obter ordem de serviço existente:', error);
-        throw new Error('Não foi possível obter a ordem de serviço existente.');
-    }
+async function getExistingOrderService(order_id: string): Promise<any> {
+  try {
+    const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Erro ao obter ordem de serviço existente:', error);
+    throw new Error('Não foi possível obter a ordem de serviço existente.');
+  }
 }
 
-async function updateOrderService(details) {
-    const { order_id, ...updateFields } = details;
-    try {
-        // Obter os dados atuais da ordem de serviço
-        const existingOrder = await getExistingOrderService(order_id);
-        
-        // Mesclar os dados existentes com os campos a serem atualizados
-        const updatedOrder = { ...existingOrder, ...updateFields };
-        
-        // Enviar a requisição PUT com todos os campos
-        await axios.put(`${config.API_BASE_URL}/ordens-servico/${order_id}`, updatedOrder);
-        
-        return `Ordem de serviço ${order_id} atualizada com sucesso.`;
-    } catch (error) {
-        console.error('Erro ao atualizar ordem de serviço:', error);
-        
-        if (axios.isAxiosError(error)) {
-            if (error.response && error.response.data && error.response.data.detail) {
-                console.error('Detalhes do erro:', error.response.data.detail);
-                return `Erro ao atualizar a ordem de serviço: ${JSON.stringify(error.response.data.detail)}`;
-            } else {
-                return 'Erro ao atualizar a ordem de serviço. Resposta inválida do servidor.';
-            }
-        } else {
-            return 'Erro ao atualizar a ordem de serviço. Tente novamente mais tarde.';
-        }
+async function updateOrderService(details: any): Promise<string> {
+  const { order_id, ...updateFields } = details;
+  try {
+    // Obter os dados atuais da ordem de serviço
+    const existingOrder = await getExistingOrderService(order_id);
+    
+    // Mesclar os dados existentes com os campos a serem atualizados
+    const updatedOrder = { ...existingOrder, ...updateFields };
+    
+    // Enviar a requisição PUT com todos os campos
+    await axios.put(`${config.API_BASE_URL}/ordens-servico/${order_id}`, updatedOrder);
+    
+    return `Ordem de serviço ${order_id} atualizada com sucesso.`;
+  } catch (error: any) {
+    console.error('Erro ao atualizar ordem de serviço:', error);
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response && error.response.data && error.response.data.detail) {
+        console.error('Detalhes do erro:', error.response.data.detail);
+        return `Erro ao atualizar a ordem de serviço: ${JSON.stringify(error.response.data.detail)}`;
+      } else {
+        return 'Erro ao atualizar a ordem de serviço. Resposta inválida do servidor.';
+      }
+    } else {
+      return 'Erro ao atualizar a ordem de serviço. Tente novamente mais tarde.';
     }
+  }
 }
 
-async function deleteOrderService({ order_id }) {
-    try {
-        await axios.delete(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
-        return `Ordem de serviço ${order_id} excluída com sucesso.`;
-    } catch (error) {
-        console.error('Erro ao excluir ordem de serviço:', error);
-        return 'Erro ao excluir a ordem de serviço. Verifique o ID.';
-    }
+async function deleteOrderService({ order_id }: { order_id: string }): Promise<string> {
+  try {
+    await axios.delete(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
+    return `Ordem de serviço ${order_id} excluída com sucesso.`;
+  } catch (error: any) {
+    console.error('Erro ao excluir ordem de serviço:', error);
+    return 'Erro ao excluir a ordem de serviço. Verifique o ID.';
+  }
 }
 
-async function getAllOrderServices() {
-    try {
-        const response = await axios.get(`${config.API_BASE_URL}/ordens-servico`);
-        const orders = response.data;
-        if (orders.length === 0) {
-            return 'Nenhuma Ordem de Serviço encontrada.';
-        }
-        const formattedOrders = orders.map(order => formatOrderService(order)).join('\n\n');
-        return `Detalhes das Ordens de Serviço:\n\n${formattedOrders}`;
-    } catch (error) {
-        console.error('Erro ao buscar ordens de serviço:', error);
-        return 'Erro ao buscar as ordens de serviço. Tente novamente mais tarde.';
+async function getAllOrderServices(): Promise<string> {
+  try {
+    const response = await axios.get(`${config.API_BASE_URL}/ordens-servico`);
+    const orders = response.data;
+    if (orders.length === 0) {
+      return 'Nenhuma Ordem de Serviço encontrada.';
     }
+    const formattedOrders = orders.map((order: any) => formatOrderService(order)).join('\n\n');
+    return `Detalhes das Ordens de Serviço:\n\n${formattedOrders}`;
+  } catch (error: any) {
+    console.error('Erro ao buscar ordens de serviço:', error);
+    return 'Erro ao buscar as ordens de serviço. Tente novamente mais tarde.';
+  }
 }
 
 // Função auxiliar para formatar detalhes da ordem de serviço
-function formatOrderService(order) {
-    return `
+function formatOrderService(order: any): string {
+  return `
 ID: ${order.id}
 Tipo de Serviço: ${order.tipo_servico}
 Nome do Cliente: ${order.nome_cliente}
@@ -346,60 +348,86 @@ const start = async () => {
   cli.printIntro();
 
   const client = new Client({
-      puppeteer: { args: ['--no-sandbox'] },
-      authStrategy: new LocalAuth({ dataPath: constants.sessionPath }),
-      webVersionCache: {
-          type: 'remote',
-          remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-      },
+    puppeteer: { args: ['--no-sandbox'] },
+    authStrategy: new LocalAuth({ dataPath: constants.sessionPath }),
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+    },
   });
 
-  client.on(Events.QR_RECEIVED, (qr) => {
-      // Emitir o QR Code através do EventEmitter
-      qrEmitter.emit('qr', qr);
+  client.on('qr', (qr: string) => { // Alterado de Events.QR_RECEIVED para 'qr'
+    // Emitir o QR Code através do EventEmitter
+    qrEmitter.emit('qr', qr);
 
-      // Opcional: também exibir no terminal
-      qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
-          if (err) throw err;
-          cli.printQRCode(url);
-      });
+    // Exibir o QR Code no terminal
+    qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
+      if (err) {
+        console.error('Erro ao gerar o QR Code:', err);
+        return;
+      }
+      cli.printQRCode(url);
+    });
   });
 
-  client.on(Events.AUTHENTICATED, () => cli.printAuthenticated());
-  client.on(Events.AUTHENTICATION_FAILURE, () => cli.printAuthenticationFailure());
-
-  client.on(Events.READY, () => {
-      cli.printOutro();
+  client.on('authenticated', () => { // Alterado de Events.AUTHENTICATED para 'authenticated'
+    cli.printAuthenticated();
   });
 
-  client.on(Events.MESSAGE_RECEIVED, async (message) => {
+  client.on('auth_failure', () => { // Alterado de Events.AUTHENTICATION_FAILURE para 'auth_failure'
+    cli.printAuthenticationFailure();
+  });
+
+  client.on('ready', () => { // Alterado de Events.READY para 'ready'
+    cli.printOutro();
+  });
+
+  // Atualização: Usar o evento 'message' ao invés de Events.MESSAGE_RECEIVED
+  client.on('message', async (message: Message) => { // Alterado de Events.MESSAGE_RECEIVED para 'message'
     try {
-        console.log('Mensagem recebida:', message.body);
+      console.log('Mensagem recebida:', message.body);
 
-        // Ignorar mensagens enviadas pelo próprio bot
-        if (message.fromMe) {
-            console.log('Mensagem ignorada por ser enviada pelo bot.');
-            return;
-        }
+      // Ignorar mensagens enviadas pelo próprio bot
+      if (message.fromMe) {
+        console.log('Mensagem ignorada por ser enviada pelo bot.');
+        return;
+      }
 
-        // Ignorar mensagens de grupos
-        const chat = await message.getChat();
-        if (chat.isGroup) {
-            console.log('Mensagem ignorada por ser de grupo.');
-            return;
-        }
+      // Obter o chat associado à mensagem
+      let chat: Chat;
+      try {
+        chat = await message.getChat();
+      } catch (error) {
+        console.error('Erro ao obter o chat da mensagem:', error);
+        return;
+      }
 
-        // Processar mensagens de usuários individuais
-        console.log('Mensagem processada:', message.body);
-        await handleIncomingMessage(message);
+      // Log detalhado do objeto chat
+      console.log('Detalhes do Chat:', JSON.stringify(chat, null, 2));
+
+      // Método alternativo: Verificar o sufixo do ID do chat
+      const chatId = chat.id._serialized;
+      if (chatId.endsWith('@g.us')) {
+        console.log('Mensagem ignorada por ser de grupo.');
+        return;
+      }
+
+      // Alternativamente, verificar o tipo do chat se disponível
+      // if (chat.type === 'group') {
+      //   console.log('Mensagem ignorada por ser de grupo.');
+      //   return;
+      // }
+
+      // Processar mensagens de usuários individuais
+      console.log('Mensagem processada:', message.body);
+      await handleIncomingMessage(message);
     } catch (error) {
-        console.error('Erro ao processar mensagem recebida:', error);
+      console.error('Erro ao processar mensagem recebida:', error);
     }
-});
-
-
+  });
 
   client.initialize();
 };
+
 
 export { start, qrEmitter };
