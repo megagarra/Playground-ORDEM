@@ -9,7 +9,6 @@ import config from './config';
 
 // Configura a conexão com a OpenAI usando o ID do assistente específico
 const openai = new OpenAI({ apiKey: config.openAIAPIKey });
-const assistantId = config.assistantId;
 
 // Mapeamento de conversas ativas por usuário
 const activeChats = new Map();
