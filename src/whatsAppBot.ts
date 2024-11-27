@@ -7,6 +7,7 @@ import constants from './constants';
 import * as cli from './cli/ui';
 import config from './config';
 import dotenv from 'dotenv';
+import EventEmitter from 'events';
 
 dotenv.config();
 
@@ -17,6 +18,8 @@ const openai = new OpenAI({ apiKey: config.openAIAPIKey });
 
 // Mapeamento de conversas ativas por usuário
 const activeChats = new Map();
+
+const qrEmitter = new EventEmitter();
 
 // Definição das funções disponíveis
 const functions = [
@@ -342,44 +345,48 @@ Status: ${order.status}
 
 // Inicializa e configura o bot do WhatsApp
 const start = async () => {
-    cli.printIntro();
+  cli.printIntro();
 
-    const client = new Client({
-        puppeteer: { args: ['--no-sandbox'] },
-        authStrategy: new LocalAuth({ dataPath: constants.sessionPath }),
-        webVersionCache: {
-            type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-        },
-    });
+  const client = new Client({
+      puppeteer: { args: ['--no-sandbox'] },
+      authStrategy: new LocalAuth({ dataPath: constants.sessionPath }),
+      webVersionCache: {
+          type: 'remote',
+          remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+      },
+  });
 
-    client.on(Events.QR_RECEIVED, (qr) => {
-        qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
-            if (err) throw err;
-            cli.printQRCode(url);
-        });
-    });
+  client.on(Events.QR_RECEIVED, (qr) => {
+      // Emitir o QR Code através do EventEmitter
+      qrEmitter.emit('qr', qr);
 
-    client.on(Events.AUTHENTICATED, () => cli.printAuthenticated());
-    client.on(Events.AUTHENTICATION_FAILURE, () => cli.printAuthenticationFailure());
+      // Opcional: também exibir no terminal
+      qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
+          if (err) throw err;
+          cli.printQRCode(url);
+      });
+  });
 
-    client.on(Events.READY, () => {
-        cli.printOutro();
-    });
+  client.on(Events.AUTHENTICATED, () => cli.printAuthenticated());
+  client.on(Events.AUTHENTICATION_FAILURE, () => cli.printAuthenticationFailure());
 
-    client.on(Events.MESSAGE_RECEIVED, async (message) => {
-        if (message.from === constants.statusBroadcast || message.fromMe) return;
+  client.on(Events.READY, () => {
+      cli.printOutro();
+  });
 
-        if ((await message.getChat()).isGroup) {
-            const phoneNumber = `${config.whatsAppNumber}@c.us`;
-            const mentionIds = message.mentionedIds.map(id => id.toString());
-            if (mentionIds.includes(phoneNumber)) await handleIncomingMessage(message);
-        } else {
-            await handleIncomingMessage(message);
-        }
-    });
+  client.on(Events.MESSAGE_RECEIVED, async (message) => {
+      if (message.from === constants.statusBroadcast || message.fromMe) return;
 
-    client.initialize();
+      if ((await message.getChat()).isGroup) {
+          const phoneNumber = `${config.whatsAppNumber}@c.us`;
+          const mentionIds = message.mentionedIds.map(id => id.toString());
+          if (mentionIds.includes(phoneNumber)) await handleIncomingMessage(message);
+      } else {
+          await handleIncomingMessage(message);
+      }
+  });
+
+  client.initialize();
 };
 
-export { start };
+export { start, qrEmitter };
