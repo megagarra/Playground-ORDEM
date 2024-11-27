@@ -237,7 +237,7 @@ async function handleIncomingMessage(message) {
 // Funções CRUD para ordens de serviço usando axios
 async function createOrderService(details) {
     try {
-        const response = await axios.post(`${API_BASE_URL}/ordens-servico`, {
+        const response = await axios.post(`${config.API_BASE_URL}/ordens-servico`, {
             tipo_servico: details.tipo_servico,
             nome_cliente: details.nome_cliente,
             endereco_cliente: details.endereco_cliente,
@@ -257,7 +257,7 @@ async function createOrderService(details) {
 
 async function getOrderService({ order_id }) {
     try {
-        const response = await axios.get(`${API_BASE_URL}/ordens-servico/${order_id}`);
+        const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
         return `Detalhes da Ordem de Serviço:\n${formatOrderService(response.data)}`;
     } catch (error) {
         console.error('Erro ao buscar ordem de serviço:', error);
@@ -267,7 +267,7 @@ async function getOrderService({ order_id }) {
 
 async function getExistingOrderService(order_id) {
     try {
-        const response = await axios.get(`${API_BASE_URL}/ordens-servico/${order_id}`);
+        const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
         return response.data;
     } catch (error) {
         console.error('Erro ao obter ordem de serviço existente:', error);
@@ -285,7 +285,7 @@ async function updateOrderService(details) {
         const updatedOrder = { ...existingOrder, ...updateFields };
         
         // Enviar a requisição PUT com todos os campos
-        await axios.put(`${API_BASE_URL}/ordens-servico/${order_id}`, updatedOrder);
+        await axios.put(`${config.API_BASE_URL}/ordens-servico/${order_id}`, updatedOrder);
         
         return `Ordem de serviço ${order_id} atualizada com sucesso.`;
     } catch (error) {
@@ -306,7 +306,7 @@ async function updateOrderService(details) {
 
 async function deleteOrderService({ order_id }) {
     try {
-        await axios.delete(`${API_BASE_URL}/ordens-servico/${order_id}`);
+        await axios.delete(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
         return `Ordem de serviço ${order_id} excluída com sucesso.`;
     } catch (error) {
         console.error('Erro ao excluir ordem de serviço:', error);
@@ -316,7 +316,7 @@ async function deleteOrderService({ order_id }) {
 
 async function getAllOrderServices() {
     try {
-        const response = await axios.get(`${API_BASE_URL}/ordens-servico`);
+        const response = await axios.get(`${config.API_BASE_URL}/ordens-servico`);
         const orders = response.data;
         if (orders.length === 0) {
             return 'Nenhuma Ordem de Serviço encontrada.';
