@@ -9,7 +9,6 @@ import config from './config';
 import dotenv from 'dotenv';
 import EventEmitter from 'events';
 
-
 dotenv.config();
 
 // Configuração da API OpenAI
@@ -43,7 +42,7 @@ const functions = [
         },
         data_hora_agendado: {
           type: "string",
-          description: "Data para agendamento do serviço (formato YYYY-MM-DD)."
+          description: "Data para agendamento do serviço (formato DD-MM-YYYY)."
         },
         hora: {
           type: "string",
@@ -59,7 +58,7 @@ const functions = [
         },
         status: {
           type: "string",
-          description: "Status atual da ordem de serviço."
+          description: "Status atual da ordem de serviço. (Aberto, Andamento, Encerrado, Cancelado, etc...)"
         }
       },
       required: [
@@ -67,8 +66,10 @@ const functions = [
         "nome_cliente",
         "endereco_cliente",
         "data_hora_agendado",
+        "hora",
         "descricao_servico",
-        "funcionario_responsavel"
+        "funcionario_responsavel",
+        "status"
       ]
     }
   },
@@ -110,7 +111,7 @@ const functions = [
         },
         data_hora_agendado: {
           type: "string",
-          description: "Data e hora agendadas para o serviço (formato YYYY-MM-DD HH:MM)."
+          description: "Data para agendamento do serviço (formato DD-MM-YYYY)."
         },
         hora: {
           type: "string",
@@ -153,6 +154,34 @@ const functions = [
       type: "object",
       properties: {}
     }
+  },
+  {
+    name: "add_authorized_number",
+    description: "Adiciona um número de telefone à lista de números autorizados.",
+    parameters: {
+      type: "object",
+      properties: {
+        phone_number: {
+          type: "string",
+          description: "Número de telefone a ser adicionado."
+        }
+      },
+      required: ["phone_number"]
+    }
+  },
+  {
+    name: "remove_authorized_number",
+    description: "Remove um número de telefone da lista de números autorizados.",
+    parameters: {
+      type: "object",
+      properties: {
+        phone_number: {
+          type: "string",
+          description: "Número de telefone a ser removido."
+        }
+      },
+      required: ["phone_number"]
+    }
   }
 ];
 
@@ -168,18 +197,29 @@ async function handleIncomingMessage(message: Message) {
     // Adicionar a nova mensagem do usuário ao histórico
     conversation.push({ role: 'user', content: content });
 
+    // Adicionar uma mensagem de sistema para orientar o comportamento do assistente
+    const systemMessage = {
+      role: 'system',
+      content:
+        'Você é um assistente especializado em gerenciamento de ordens de serviço. Responda de forma direta e somente sobre assuntos relacionados ao gerenciamento de ordens de serviço. Se a pergunta não for relevante, informe ao usuário que você só pode ajudar com tarefas relacionadas às ordens de serviço.',
+    };
+
+    // Simular digitação antes de enviar a resposta
+    const chat = await message.getChat();
+    await chat.sendStateTyping();
+
     // Envia a conversa completa para o assistente com as funções disponíveis
-    const response = await openai.chat.completions.create({
-      model: "gpt-4", // Modelo corrigido
-      messages: conversation,
+    let response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini', // Você pode usar "gpt-4" se tiver acesso
+      messages: [systemMessage, ...conversation],
       functions: functions,
-      function_call: "auto", // Permite que o modelo escolha quando chamar uma função
+      function_call: 'auto',
     });
 
-    const responseMessage = response.choices[0].message;
+    let responseMessage = response.choices[0].message;
 
-    // Verifica se o assistente chamou uma função
-    if (responseMessage.function_call) {
+    // Loop para lidar com múltiplas interações até que o assistente retorne uma resposta final
+    while (responseMessage.function_call) {
       const functionName = responseMessage.function_call.name;
       const functionArgs = JSON.parse(responseMessage.function_call.arguments);
 
@@ -201,6 +241,12 @@ async function handleIncomingMessage(message: Message) {
         case 'get_all_order_services':
           functionResponse = await getAllOrderServices();
           break;
+        case 'add_authorized_number':
+          functionResponse = await addAuthorizedNumber(functionArgs.phone_number);
+          break;
+        case 'remove_authorized_number':
+          functionResponse = await removeAuthorizedNumber(functionArgs.phone_number);
+          break;
         default:
           functionResponse = 'Função não reconhecida.';
       }
@@ -212,45 +258,82 @@ async function handleIncomingMessage(message: Message) {
       // Atualizar o histórico no Map
       activeChats.set(userId, conversation);
 
-      // Enviar a resposta da função de volta para o usuário
-      await message.reply(functionResponse);
+      // Enviar a conversa atualizada para o assistente
+      response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [systemMessage, ...conversation],
+        functions: functions,
+        function_call: 'auto',
+      });
 
-    } else {
-      // Resposta normal do assistente
-      const respostaAI: string = responseMessage.content ?? 'Desculpe, não consegui processar sua solicitação.';
-
-      // Adicionar a resposta do assistente ao histórico
-      conversation.push(responseMessage);
-
-      // Atualizar o histórico no Map
-      activeChats.set(userId, conversation);
-
-      await message.reply(respostaAI);
+      responseMessage = response.choices[0].message;
     }
 
+    // Adicionar a resposta final do assistente ao histórico
+    conversation.push(responseMessage);
+
+    // Atualizar o histórico no Map
+    activeChats.set(userId, conversation);
+
+    // Parar a simulação de digitação
+    await chat.clearState();
+
+    // Enviar a resposta final para o usuário
+    const finalResponseText = responseMessage.content ?? 'Desculpe, não consegui processar sua solicitação.';
+    await message.reply(finalResponseText);
   } catch (error) {
-    console.error('Erro ao processar a mensagem:', error);
+    // Parar a simulação de digitação em caso de erro
+    const chat = await message.getChat();
+    await chat.clearState();
+
     await message.reply('Erro ao processar a mensagem. Tente novamente mais tarde.');
   }
+}
+
+// Função auxiliar para converter a data
+function formatDate(dateStr: string): string {
+  const [day, month, year] = dateStr.split('-');
+  return `${year}-${month}-${day}`; // Formato YYYY-MM-DD
 }
 
 // Funções CRUD para ordens de serviço usando axios
 async function createOrderService(details: any): Promise<string> {
   try {
-    const response = await axios.post(`${config.API_BASE_URL}/ordens-servico`, {
+    // Converter a data para o formato YYYY-MM-DD
+    const formattedDate = formatDate(details.data_hora_agendado);
+
+    // Preparar os dados a serem enviados
+    const payload = {
       tipo_servico: details.tipo_servico,
       nome_cliente: details.nome_cliente,
       endereco_cliente: details.endereco_cliente,
-      data_hora_agendado: details.data_hora_agendado,
+      data_hora_agendado: formattedDate,
       hora: details.hora,
       descricao_servico: details.descricao_servico,
       funcionario_responsavel: details.funcionario_responsavel,
-      status: details.status || 'Pendente' // Valor padrão para status, se não fornecido
-    });
+      status: details.status
+    };
+
+    const response = await axios.post(`${config.API_BASE_URL}/ordens-servico`, payload);
 
     return `Ordem de Serviço criada com sucesso! ID: ${response.data.id}`;
   } catch (error: any) {
-    console.error('Erro ao criar ordem de serviço:', error);
+
+    if (axios.isAxiosError(error) && error.response && error.response.data) {
+
+      const errorData = error.response.data;
+
+      if (errorData.detail && Array.isArray(errorData.detail)) {
+        const errors = errorData.detail.map((item: any) => {
+          const field = item.loc[item.loc.length - 1];
+          return `${field}: ${item.msg}`;
+        });
+        return `Os seguintes erros ocorreram: ${errors.join('; ')}. Por favor, corrija-os e tente novamente.`;
+      } else if (errorData.detail && typeof errorData.detail === 'string') {
+        return `Erro ao criar a ordem de serviço: ${errorData.detail}`;
+      }
+    }
+
     return 'Erro ao criar a ordem de serviço. Verifique os detalhes e tente novamente.';
   }
 }
@@ -260,18 +343,7 @@ async function getOrderService({ order_id }: { order_id: string }): Promise<stri
     const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
     return `Detalhes da Ordem de Serviço:\n${formatOrderService(response.data)}`;
   } catch (error: any) {
-    console.error('Erro ao buscar ordem de serviço:', error);
     return 'Erro ao buscar a ordem de serviço. Verifique o ID e tente novamente.';
-  }
-}
-
-async function getExistingOrderService(order_id: string): Promise<any> {
-  try {
-    const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
-    return response.data;
-  } catch (error: any) {
-    console.error('Erro ao obter ordem de serviço existente:', error);
-    throw new Error('Não foi possível obter a ordem de serviço existente.');
   }
 }
 
@@ -280,24 +352,30 @@ async function updateOrderService(details: any): Promise<string> {
   try {
     // Obter os dados atuais da ordem de serviço
     const existingOrder = await getExistingOrderService(order_id);
-    
+
     // Mesclar os dados existentes com os campos a serem atualizados
     const updatedOrder = { ...existingOrder, ...updateFields };
-    
+
     // Enviar a requisição PUT com todos os campos
     await axios.put(`${config.API_BASE_URL}/ordens-servico/${order_id}`, updatedOrder);
-    
+
     return `Ordem de serviço ${order_id} atualizada com sucesso.`;
   } catch (error: any) {
-    console.error('Erro ao atualizar ordem de serviço:', error);
-    
+
     if (axios.isAxiosError(error)) {
-      if (error.response && error.response.data && error.response.data.detail) {
-        console.error('Detalhes do erro:', error.response.data.detail);
-        return `Erro ao atualizar a ordem de serviço: ${JSON.stringify(error.response.data.detail)}`;
-      } else {
-        return 'Erro ao atualizar a ordem de serviço. Resposta inválida do servidor.';
+      if (error.response && error.response.data) {
+        const errorData = error.response.data;
+        if (errorData.detail && Array.isArray(errorData.detail)) {
+          const errors = errorData.detail.map((item: any) => {
+            const field = item.loc[item.loc.length - 1];
+            return `${field}: ${item.msg}`;
+          });
+          return `Erro ao atualizar a ordem de serviço: ${errors.join('; ')}. Por favor, corrija-os e tente novamente.`;
+        } else if (errorData.detail && typeof errorData.detail === 'string') {
+          return `Erro ao atualizar a ordem de serviço: ${errorData.detail}`;
+        }
       }
+      return 'Erro ao atualizar a ordem de serviço. Resposta inválida do servidor.';
     } else {
       return 'Erro ao atualizar a ordem de serviço. Tente novamente mais tarde.';
     }
@@ -309,7 +387,6 @@ async function deleteOrderService({ order_id }: { order_id: string }): Promise<s
     await axios.delete(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
     return `Ordem de serviço ${order_id} excluída com sucesso.`;
   } catch (error: any) {
-    console.error('Erro ao excluir ordem de serviço:', error);
     return 'Erro ao excluir a ordem de serviço. Verifique o ID.';
   }
 }
@@ -324,8 +401,16 @@ async function getAllOrderServices(): Promise<string> {
     const formattedOrders = orders.map((order: any) => formatOrderService(order)).join('\n\n');
     return `Detalhes das Ordens de Serviço:\n\n${formattedOrders}`;
   } catch (error: any) {
-    console.error('Erro ao buscar ordens de serviço:', error);
     return 'Erro ao buscar as ordens de serviço. Tente novamente mais tarde.';
+  }
+}
+
+async function getExistingOrderService(order_id: string): Promise<any> {
+  try {
+    const response = await axios.get(`${config.API_BASE_URL}/ordens-servico/${order_id}`);
+    return response.data;
+  } catch (error: any) {
+    throw new Error('Não foi possível obter a ordem de serviço existente.');
   }
 }
 
@@ -340,7 +425,90 @@ Data e Hora Agendada: ${order.data_hora_agendado} ${order.hora}
 Descrição do Serviço: ${order.descricao_servico}
 Funcionário Responsável: ${order.funcionario_responsavel}
 Status: ${order.status}
-`.trim();
+  `.trim();
+}
+
+// --------------------
+// Funções para Números Autorizados
+// --------------------
+
+// Cache em memória para números autorizados
+const authorizedNumbers = new Set<string>();
+let isAuthorizedNumbersLoaded = false;
+
+// Função para carregar os números autorizados da API
+async function loadAuthorizedNumbers() {
+  try {
+    const response = await axios.get(`${config.API_BASE_URL}/authorized-numbers`);
+    const numbers = response.data;
+
+    authorizedNumbers.clear();
+    for (const num of numbers) {
+      authorizedNumbers.add(num.phone_number);
+    }
+
+    isAuthorizedNumbersLoaded = true;
+  } catch (error) {
+    console.error('Erro ao carregar números autorizados:', error);
+  }
+}
+
+// Função para verificar se um número é autorizado usando o cache
+function isAuthorizedNumber(phoneNumber: string): boolean {
+  return authorizedNumbers.has(phoneNumber);
+}
+
+// Função para adicionar um número autorizado e atualizar o cache
+async function addAuthorizedNumber(phoneNumber: string): Promise<string> {
+  try {
+    const response = await axios.post(`${config.API_BASE_URL}/authorized-numbers`, {
+      phone_number: phoneNumber,
+    });
+    authorizedNumbers.add(phoneNumber); // Atualiza o cache
+    return `Número ${phoneNumber} adicionado com sucesso aos números autorizados.`;
+  } catch (error: any) {
+
+    if (axios.isAxiosError(error)) {
+      if (error.response && error.response.data && error.response.data.detail) {
+        return `Erro ao adicionar número autorizado: ${error.response.data.detail}`;
+      } else {
+        return 'Erro ao adicionar número autorizado. Resposta inválida do servidor.';
+      }
+    } else {
+      return 'Erro ao adicionar número autorizado. Tente novamente mais tarde.';
+    }
+  }
+}
+
+// Função para remover um número autorizado e atualizar o cache
+async function removeAuthorizedNumber(phoneNumber: string): Promise<string> {
+  try {
+    // Primeiro, obter o ID do número autorizado com base no número de telefone
+    const response = await axios.get(`${config.API_BASE_URL}/authorized-numbers`);
+    const numbers = response.data;
+
+    const numberToDelete = numbers.find((num: any) => num.phone_number === phoneNumber);
+
+    if (!numberToDelete) {
+      return `Número ${phoneNumber} não encontrado na lista de números autorizados.`;
+    }
+
+    // Remover o número autorizado usando o ID
+    await axios.delete(`${config.API_BASE_URL}/authorized-numbers/${numberToDelete.id}`);
+    authorizedNumbers.delete(phoneNumber); // Atualiza o cache
+    return `Número ${phoneNumber} removido com sucesso dos números autorizados.`;
+  } catch (error: any) {
+
+    if (axios.isAxiosError(error)) {
+      if (error.response && error.response.data && error.response.data.detail) {
+        return `Erro ao remover número autorizado: ${error.response.data.detail}`;
+      } else {
+        return 'Erro ao remover número autorizado. Resposta inválida do servidor.';
+      }
+    } else {
+      return 'Erro ao remover número autorizado. Tente novamente mais tarde.';
+    }
+  }
 }
 
 // Inicializa e configura o bot do WhatsApp
@@ -352,44 +520,49 @@ const start = async () => {
     authStrategy: new LocalAuth({ dataPath: constants.sessionPath }),
     webVersionCache: {
       type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+      remotePath:
+        'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     },
   });
 
-  client.on('qr', (qr: string) => { // Alterado de Events.QR_RECEIVED para 'qr'
+  client.on('qr', (qr: string) => {
     // Emitir o QR Code através do EventEmitter
     qrEmitter.emit('qr', qr);
 
     // Exibir o QR Code no terminal
     qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
       if (err) {
-        console.error('Erro ao gerar o QR Code:', err);
         return;
       }
       cli.printQRCode(url);
     });
   });
 
-  client.on('authenticated', () => { // Alterado de Events.AUTHENTICATED para 'authenticated'
+  client.on('authenticated', () => {
     cli.printAuthenticated();
   });
 
-  client.on('auth_failure', () => { // Alterado de Events.AUTHENTICATION_FAILURE para 'auth_failure'
+  client.on('auth_failure', () => {
     cli.printAuthenticationFailure();
   });
 
-  client.on('ready', () => { // Alterado de Events.READY para 'ready'
+  client.on('ready', async () => {
     cli.printOutro();
+    await loadAuthorizedNumbers(); // Carrega os números autorizados ao iniciar
   });
 
-  // Atualização: Usar o evento 'message' ao invés de Events.MESSAGE_RECEIVED
-  client.on('message', async (message: Message) => { // Alterado de Events.MESSAGE_RECEIVED para 'message'
-    try {
-      console.log('Mensagem recebida:', message.body);
+  // Atualizar o cache de números autorizados periodicamente (opcional)
+  setInterval(loadAuthorizedNumbers, 5 * 60 * 1000); // Atualiza a cada 5 minutos
 
+  client.on('message', async (message: Message) => {
+    try {
       // Ignorar mensagens enviadas pelo próprio bot
       if (message.fromMe) {
-        console.log('Mensagem ignorada por ser enviada pelo bot.');
+        return;
+      }
+
+      // Verificar se os números autorizados foram carregados
+      if (!isAuthorizedNumbersLoaded) {
         return;
       }
 
@@ -398,36 +571,92 @@ const start = async () => {
       try {
         chat = await message.getChat();
       } catch (error) {
-        console.error('Erro ao obter o chat da mensagem:', error);
         return;
       }
 
-      // Log detalhado do objeto chat
-      console.log('Detalhes do Chat:', JSON.stringify(chat, null, 2));
-
-      // Método alternativo: Verificar o sufixo do ID do chat
+      // Verificar se a mensagem veio de um grupo
       const chatId = chat.id._serialized;
       if (chatId.endsWith('@g.us')) {
-        console.log('Mensagem ignorada por ser de grupo.');
         return;
       }
 
-      // Alternativamente, verificar o tipo do chat se disponível
-      // if (chat.type === 'group') {
-      //   console.log('Mensagem ignorada por ser de grupo.');
-      //   return;
-      // }
+      // Obter o número de telefone do remetente
+      const senderNumber = message.from.split('@')[0];
 
-      // Processar mensagens de usuários individuais
-      console.log('Mensagem processada:', message.body);
+      // Verificar se o número é autorizado
+      const authorized = isAuthorizedNumber(senderNumber);
+
+      if (!authorized) {
+        return;
+      }
+
+      // Verificar se a mensagem é um comando !adicionar ou !remover
+      const messageBody = message.body.trim();
+      if (messageBody.startsWith('!adicionar')) {
+        const phoneNumber = messageBody.replace('!adicionar', '').trim();
+
+        if (!phoneNumber) {
+          await message.reply(
+            'Por favor, forneça um número de telefone para adicionar. Exemplo: !adicionar 5511999999999',
+          );
+          return;
+        }
+
+        // Simular digitação
+        await chat.sendStateTyping();
+
+        const addResponse = await addAuthorizedNumber(phoneNumber);
+
+        // Simular digitação por um tempo proporcional ao tamanho da resposta
+        const typingDelay = Math.min(addResponse.length * 50, 5000);
+        await new Promise((resolve) => setTimeout(resolve, typingDelay));
+
+        // Parar a simulação de digitação
+        await chat.clearState();
+
+        await message.reply(addResponse);
+        return;
+      }
+
+      if (messageBody.startsWith('!remover')) {
+        const phoneNumber = messageBody.replace('!remover', '').trim();
+
+        if (!phoneNumber) {
+          await message.reply(
+            'Por favor, forneça um número de telefone para remover. Exemplo: !remover 5511999999999',
+          );
+          return;
+        }
+
+        // Simular digitação
+        await chat.sendStateTyping();
+
+        const removeResponse = await removeAuthorizedNumber(phoneNumber);
+
+        // Simular digitação por um tempo proporcional ao tamanho da resposta
+        const typingDelay = Math.min(removeResponse.length * 50, 5000);
+        await new Promise((resolve) => setTimeout(resolve, typingDelay));
+
+        // Parar a simulação de digitação
+        await chat.clearState();
+
+        await message.reply(removeResponse);
+        return;
+      }
+
+      // Processar outras mensagens normalmente
       await handleIncomingMessage(message);
     } catch (error) {
-      console.error('Erro ao processar mensagem recebida:', error);
+
+      // Parar a simulação de digitação em caso de erro
+      const chat = await message.getChat();
+      await chat.clearState();
+
+      await message.reply('Ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.');
     }
   });
 
   client.initialize();
 };
-
 
 export { start, qrEmitter };
