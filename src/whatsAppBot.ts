@@ -309,7 +309,6 @@ async function transcribeAudio(filePath: string): Promise<string | null> {
   }
 }
 
-
 // Função auxiliar para converter a data
 function formatDate(dateStr: string): string {
   const [day, month, year] = dateStr.split('-');
@@ -456,15 +455,17 @@ let isAuthorizedNumbersLoaded = false;
 // Função para carregar os números autorizados da API
 async function loadAuthorizedNumbers() {
   try {
-    const response = await axios.get(`${config.API_BASE_URL}/authorized-numbers`);
-    const numbers = response.data;
+    if (!isAuthorizedNumbersLoaded) {
+      const response = await axios.get(`${config.API_BASE_URL}/authorized-numbers`);
+      const numbers = response.data;
 
-    authorizedNumbers.clear();
-    for (const num of numbers) {
-      authorizedNumbers.add(num.phone_number);
+      authorizedNumbers.clear();
+      for (const num of numbers) {
+        authorizedNumbers.add(num.phone_number);
+      }
+
+      isAuthorizedNumbersLoaded = true;
     }
-
-    isAuthorizedNumbersLoaded = true;
   } catch (error) {
     console.error('Erro ao carregar números autorizados:', error);
   }
@@ -478,10 +479,10 @@ function isAuthorizedNumber(phoneNumber: string): boolean {
 // Função para adicionar um número autorizado e atualizar o cache
 async function addAuthorizedNumber(phoneNumber: string): Promise<string> {
   try {
-    const response = await axios.post(`${config.API_BASE_URL}/authorized-numbers`, {
+    await axios.post(`${config.API_BASE_URL}/authorized-numbers`, {
       phone_number: phoneNumber,
     });
-    authorizedNumbers.add(phoneNumber); // Atualiza o cache
+    authorizedNumbers.add(phoneNumber); // Atualiza o cache local
     return `Número ${phoneNumber} adicionado com sucesso aos números autorizados.`;
   } catch (error: any) {
     if (axios.isAxiosError(error)) {
@@ -499,19 +500,17 @@ async function addAuthorizedNumber(phoneNumber: string): Promise<string> {
 // Função para remover um número autorizado e atualizar o cache
 async function removeAuthorizedNumber(phoneNumber: string): Promise<string> {
   try {
-    // Primeiro, obter o ID do número autorizado com base no número de telefone
-    const response = await axios.get(`${config.API_BASE_URL}/authorized-numbers`);
-    const numbers = response.data;
-
-    const numberToDelete = numbers.find((num: any) => num.phone_number === phoneNumber);
-
-    if (!numberToDelete) {
+    // Primeiro, verificar se o número existe no cache local
+    if (!authorizedNumbers.has(phoneNumber)) {
       return `Número ${phoneNumber} não encontrado na lista de números autorizados.`;
     }
 
-    // Remover o número autorizado usando o ID
-    await axios.delete(`${config.API_BASE_URL}/authorized-numbers/${numberToDelete.id}`);
-    authorizedNumbers.delete(phoneNumber); // Atualiza o cache
+    // Remover o número autorizado na API
+    await axios.delete(`${config.API_BASE_URL}/authorized-numbers/${phoneNumber}`);
+
+    // Atualizar o cache local
+    authorizedNumbers.delete(phoneNumber);
+
     return `Número ${phoneNumber} removido com sucesso dos números autorizados.`;
   } catch (error: any) {
     if (axios.isAxiosError(error)) {
@@ -566,8 +565,8 @@ const start = async () => {
     await loadAuthorizedNumbers(); // Carrega os números autorizados ao iniciar
   });
 
-  // Atualizar o cache de números autorizados periodicamente (opcional)
-  setInterval(loadAuthorizedNumbers, 5 * 60 * 1000); // Atualiza a cada 5 minutos
+  // Removido o setInterval para evitar chamadas periódicas
+  // setInterval(loadAuthorizedNumbers, 5 * 60 * 1000); // Removido
 
   client.on('message', async (message: Message) => {
     try {
@@ -576,10 +575,8 @@ const start = async () => {
         return;
       }
 
-      // Verificar se os números autorizados foram carregados
-      if (!isAuthorizedNumbersLoaded) {
-        return;
-      }
+      // Carregar os números autorizados se ainda não foram carregados
+      await loadAuthorizedNumbers();
 
       // Obter o chat associado à mensagem
       let chat: Chat;
