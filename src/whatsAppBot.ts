@@ -8,6 +8,8 @@ import * as cli from './cli/ui';
 import config from './config';
 import dotenv from 'dotenv';
 import EventEmitter from 'events';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
@@ -23,172 +25,171 @@ const qrEmitter = new EventEmitter();
 // Definição das funções disponíveis para o assistente
 const functions = [
   {
-    name: "create_order_service",
-    description: "Cria uma nova ordem de serviço com os detalhes fornecidos.",
+    name: 'create_order_service',
+    description: 'Cria uma nova ordem de serviço com os detalhes fornecidos.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         tipo_servico: {
-          type: "string",
-          description: "Tipo de serviço a ser realizado."
+          type: 'string',
+          description: 'Tipo de serviço a ser realizado.',
         },
         nome_cliente: {
-          type: "string",
-          description: "Nome do cliente que solicitou o serviço."
+          type: 'string',
+          description: 'Nome do cliente que solicitou o serviço.',
         },
         endereco_cliente: {
-          type: "string",
-          description: "Endereço do cliente."
+          type: 'string',
+          description: 'Endereço do cliente.',
         },
         data_hora_agendado: {
-          type: "string",
-          description: "Data para agendamento do serviço (formato DD-MM-YYYY)."
+          type: 'string',
+          description: 'Data para agendamento do serviço (formato DD-MM-YYYY).',
         },
         hora: {
-          type: "string",
-          description: "Hora específica do serviço (formato HH:MM)."
+          type: 'string',
+          description: 'Hora específica do serviço (formato HH:MM).',
         },
         descricao_servico: {
-          type: "string",
-          description: "Descrição detalhada do serviço a ser realizado."
+          type: 'string',
+          description: 'Descrição detalhada do serviço a ser realizado.',
         },
         funcionario_responsavel: {
-          type: "string",
-          description: "Nome do funcionário responsável pelo serviço."
+          type: 'string',
+          description: 'Nome do funcionário responsável pelo serviço.',
         },
         status: {
-          type: "string",
-          description: "Status atual da ordem de serviço. (Aberto, Andamento, Encerrado, Cancelado, etc...)"
-        }
+          type: 'string',
+          description: 'Status atual da ordem de serviço. (Aberto, Andamento, Encerrado, Cancelado, etc...)',
+        },
       },
       required: [
-        "tipo_servico",
-        "nome_cliente",
-        "endereco_cliente",
-        "data_hora_agendado",
-        "hora",
-        "descricao_servico",
-        "funcionario_responsavel",
-        "status"
-      ]
-    }
+        'tipo_servico',
+        'nome_cliente',
+        'endereco_cliente',
+        'data_hora_agendado',
+        'hora',
+        'descricao_servico',
+        'funcionario_responsavel',
+        'status',
+      ],
+    },
   },
   {
-    name: "get_order_service",
-    description: "Recupera os detalhes de uma ordem de serviço específica pelo ID.",
+    name: 'get_order_service',
+    description: 'Recupera os detalhes de uma ordem de serviço específica pelo ID.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         order_id: {
-          type: "string",
-          description: "ID único da ordem de serviço."
-        }
+          type: 'string',
+          description: 'ID único da ordem de serviço.',
+        },
       },
-      required: ["order_id"]
-    }
+      required: ['order_id'],
+    },
   },
   {
-    name: "update_order_service",
-    description: "Atualiza os detalhes de uma ordem de serviço existente.",
+    name: 'update_order_service',
+    description: 'Atualiza os detalhes de uma ordem de serviço existente.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         order_id: {
-          type: "string",
-          description: "ID único da ordem de serviço a ser atualizada."
+          type: 'string',
+          description: 'ID único da ordem de serviço a ser atualizada.',
         },
         tipo_servico: {
-          type: "string",
-          description: "Tipo de serviço a ser realizado."
+          type: 'string',
+          description: 'Tipo de serviço a ser realizado.',
         },
         nome_cliente: {
-          type: "string",
-          description: "Nome do cliente que solicitou o serviço."
+          type: 'string',
+          description: 'Nome do cliente que solicitou o serviço.',
         },
         endereco_cliente: {
-          type: "string",
-          description: "Endereço do cliente."
+          type: 'string',
+          description: 'Endereço do cliente.',
         },
         data_hora_agendado: {
-          type: "string",
-          description: "Data para agendamento do serviço (formato DD-MM-YYYY)."
+          type: 'string',
+          description: 'Data para agendamento do serviço (formato DD-MM-YYYY).',
         },
         hora: {
-          type: "string",
-          description: "Hora específica do serviço (formato HH:MM)."
+          type: 'string',
+          description: 'Hora específica do serviço (formato HH:MM).',
         },
         descricao_servico: {
-          type: "string",
-          description: "Descrição detalhada do serviço a ser realizado."
+          type: 'string',
+          description: 'Descrição detalhada do serviço a ser realizado.',
         },
         funcionario_responsavel: {
-          type: "string",
-          description: "Nome do funcionário responsável pelo serviço."
+          type: 'string',
+          description: 'Nome do funcionário responsável pelo serviço.',
         },
         status: {
-          type: "string",
-          description: "Status atual da ordem de serviço."
-        }
+          type: 'string',
+          description: 'Status atual da ordem de serviço.',
+        },
       },
-      required: ["order_id"]
-    }
+      required: ['order_id'],
+    },
   },
   {
-    name: "delete_order_service",
-    description: "Exclui uma ordem de serviço específica pelo ID.",
+    name: 'delete_order_service',
+    description: 'Exclui uma ordem de serviço específica pelo ID.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         order_id: {
-          type: "string",
-          description: "ID único da ordem de serviço a ser excluída."
-        }
+          type: 'string',
+          description: 'ID único da ordem de serviço a ser excluída.',
+        },
       },
-      required: ["order_id"]
-    }
+      required: ['order_id'],
+    },
   },
   {
-    name: "get_all_order_services",
-    description: "Recupera uma lista de todas as ordens de serviço existentes.",
+    name: 'get_all_order_services',
+    description: 'Recupera uma lista de todas as ordens de serviço existentes.',
     parameters: {
-      type: "object",
-      properties: {}
-    }
+      type: 'object',
+      properties: {},
+    },
   },
   {
-    name: "add_authorized_number",
-    description: "Adiciona um número de telefone à lista de números autorizados.",
+    name: 'add_authorized_number',
+    description: 'Adiciona um número de telefone à lista de números autorizados.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         phone_number: {
-          type: "string",
-          description: "Número de telefone a ser adicionado."
-        }
+          type: 'string',
+          description: 'Número de telefone a ser adicionado.',
+        },
       },
-      required: ["phone_number"]
-    }
+      required: ['phone_number'],
+    },
   },
   {
-    name: "remove_authorized_number",
-    description: "Remove um número de telefone da lista de números autorizados.",
+    name: 'remove_authorized_number',
+    description: 'Remove um número de telefone da lista de números autorizados.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
         phone_number: {
-          type: "string",
-          description: "Número de telefone a ser removido."
-        }
+          type: 'string',
+          description: 'Número de telefone a ser removido.',
+        },
       },
-      required: ["phone_number"]
-    }
-  }
+      required: ['phone_number'],
+    },
+  },
 ];
 
 // Função para interagir com o assistente e processar a mensagem recebida
-async function handleIncomingMessage(message: Message) {
+async function handleIncomingMessage(message: Message, content: string) {
   const userId = message.from;
-  const content = message.body;
 
   try {
     // Obter o histórico de mensagens do usuário ou inicializar um novo
@@ -210,7 +211,7 @@ async function handleIncomingMessage(message: Message) {
 
     // Envia a conversa completa para o assistente com as funções disponíveis
     let response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Você pode usar "gpt-4" se tiver acesso
+      model: 'gpt-4o-mini',
       messages: [systemMessage, ...conversation],
       functions: functions,
       function_call: 'auto',
@@ -282,6 +283,7 @@ async function handleIncomingMessage(message: Message) {
     const finalResponseText = responseMessage.content ?? 'Desculpe, não consegui processar sua solicitação.';
     await message.reply(finalResponseText);
   } catch (error) {
+    console.error('Erro ao processar a mensagem:', error);
     // Parar a simulação de digitação em caso de erro
     const chat = await message.getChat();
     await chat.clearState();
@@ -289,6 +291,24 @@ async function handleIncomingMessage(message: Message) {
     await message.reply('Erro ao processar a mensagem. Tente novamente mais tarde.');
   }
 }
+
+// Função para transcrever o áudio usando o OpenAI Whisper API
+async function transcribeAudio(filePath: string): Promise<string | null> {
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: 'whisper-1',
+      response_format: 'text',
+      language: 'pt',
+    });
+
+    return transcription; // A resposta é um texto simples (string)
+  } catch (error) {
+    console.error('Erro ao transcrever o áudio:', error);
+    return null;
+  }
+}
+
 
 // Função auxiliar para converter a data
 function formatDate(dateStr: string): string {
@@ -311,16 +331,14 @@ async function createOrderService(details: any): Promise<string> {
       hora: details.hora,
       descricao_servico: details.descricao_servico,
       funcionario_responsavel: details.funcionario_responsavel,
-      status: details.status
+      status: details.status,
     };
 
     const response = await axios.post(`${config.API_BASE_URL}/ordens-servico`, payload);
 
     return `Ordem de Serviço criada com sucesso! ID: ${response.data.id}`;
   } catch (error: any) {
-
     if (axios.isAxiosError(error) && error.response && error.response.data) {
-
       const errorData = error.response.data;
 
       if (errorData.detail && Array.isArray(errorData.detail)) {
@@ -361,7 +379,6 @@ async function updateOrderService(details: any): Promise<string> {
 
     return `Ordem de serviço ${order_id} atualizada com sucesso.`;
   } catch (error: any) {
-
     if (axios.isAxiosError(error)) {
       if (error.response && error.response.data) {
         const errorData = error.response.data;
@@ -467,7 +484,6 @@ async function addAuthorizedNumber(phoneNumber: string): Promise<string> {
     authorizedNumbers.add(phoneNumber); // Atualiza o cache
     return `Número ${phoneNumber} adicionado com sucesso aos números autorizados.`;
   } catch (error: any) {
-
     if (axios.isAxiosError(error)) {
       if (error.response && error.response.data && error.response.data.detail) {
         return `Erro ao adicionar número autorizado: ${error.response.data.detail}`;
@@ -498,7 +514,6 @@ async function removeAuthorizedNumber(phoneNumber: string): Promise<string> {
     authorizedNumbers.delete(phoneNumber); // Atualiza o cache
     return `Número ${phoneNumber} removido com sucesso dos números autorizados.`;
   } catch (error: any) {
-
     if (axios.isAxiosError(error)) {
       if (error.response && error.response.data && error.response.data.detail) {
         return `Erro ao remover número autorizado: ${error.response.data.detail}`;
@@ -597,7 +612,7 @@ const start = async () => {
 
         if (!phoneNumber) {
           await message.reply(
-            'Por favor, forneça um número de telefone para adicionar. Exemplo: !adicionar 5511999999999',
+            'Por favor, forneça um número de telefone para adicionar. Exemplo: !adicionar 5511999999999'
           );
           return;
         }
@@ -623,7 +638,7 @@ const start = async () => {
 
         if (!phoneNumber) {
           await message.reply(
-            'Por favor, forneça um número de telefone para remover. Exemplo: !remover 5511999999999',
+            'Por favor, forneça um número de telefone para remover. Exemplo: !remover 5511999999999'
           );
           return;
         }
@@ -644,9 +659,42 @@ const start = async () => {
         return;
       }
 
+      // Verificar se a mensagem é um áudio
+      if (message.hasMedia && (message.type === 'audio' || message.type === 'ptt')) {
+        // Simular digitação
+        await chat.sendStateTyping();
+
+        // Baixar o arquivo de áudio
+        const media = await message.downloadMedia();
+
+        // Salvar o arquivo de áudio temporariamente
+        const audioBuffer = Buffer.from(media.data, 'base64');
+        const tempFilePath = path.join(__dirname, `temp_audio_${Date.now()}.ogg`);
+        fs.writeFileSync(tempFilePath, audioBuffer);
+
+        // Enviar o áudio para o Whisper API
+        const transcription = await transcribeAudio(tempFilePath);
+
+        // Remover o arquivo de áudio temporário
+        fs.unlinkSync(tempFilePath);
+
+        // Parar a simulação de digitação
+        await chat.clearState();
+
+        if (transcription) {
+          // Processar a transcrição como uma mensagem de texto
+          await handleIncomingMessage(message, transcription);
+        } else {
+          await message.reply('Desculpe, não consegui transcrever o áudio.');
+        }
+
+        return;
+      }
+
       // Processar outras mensagens normalmente
-      await handleIncomingMessage(message);
+      await handleIncomingMessage(message, message.body);
     } catch (error) {
+      console.error('Erro ao processar a mensagem:', error);
 
       // Parar a simulação de digitação em caso de erro
       const chat = await message.getChat();
