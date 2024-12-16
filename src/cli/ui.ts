@@ -12,7 +12,7 @@ export const printIntro = () => {
 	console.log('')
 	console.log(color.bgCyan(color.white(' Garra AI Companion ')))
 	console.log('|------------------------------------------------------------------------------------------------------------------|')
-	console.log("| A Whatsapp bot with a particular persona that uses OpenAI's Assistant Api, DALL-E and ElevenLabs text to speech. |")
+	console.log("| A Whatsapp bot with a particular persona that uses OpenAI's Assistant Api.")
 	console.log('|------------------------------------------------------------------------------------------------------------------|')
 	console.log('')
 }

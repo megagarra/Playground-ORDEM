@@ -1,14 +1,11 @@
 import axios from 'axios';
 import qrcode from 'qrcode';
-import { Client, Message, Chat, LocalAuth } from '@periskope/whatsapp-web.js';
+import { Client, Message, LocalAuth } from '@periskope/whatsapp-web.js';
 import OpenAI from 'openai';
 import constants from './constants';
 import * as cli from './cli/ui';
-import config from './config';
 import dotenv from 'dotenv';
 import EventEmitter from 'events';
-import fs from 'fs';
-import path from 'path';
 
 dotenv.config();
 
