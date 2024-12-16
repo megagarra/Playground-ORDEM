@@ -1,20 +1,24 @@
-# 📚 **README - Sistema de Bot de WhatsApp Integrado com OpenAI e API Externa**
 
-## 📝 **Índice**
-1. [📖 Visão Geral](#-visao-geral)
-2. [🛠️ Tecnologias Utilizadas](#️-tecnologias-utilizadas)
-3. [⚙️ Configuração do Ambiente](#-configuracao-do-ambiente)
+# 📙 **README - Sistema de Bot de WhatsApp Integrado com OpenAI e API Externa**
+
+## 🖋️ **Índice**
+1. [🖐 Visão Geral](#-visao-geral)
+2. [🔧️ Tecnologias Utilizadas](#️-tecnologias-utilizadas)
+3. [⚙️ Configuração do Ambiente](#️-configuracao-do-ambiente)
 4. [🚀 Como Executar o Sistema](#-como-executar-o-sistema)
 5. [📡 Estrutura do Sistema](#-estrutura-do-sistema)
 6. [🔍 Explicação dos Principais Arquivos](#-explicacao-dos-principais-arquivos)
 7. [🚀 Principais Funcionalidades](#-principais-funcionalidades)
 8. [📢 Eventos do WhatsApp](#-eventos-do-whatsapp)
 9. [💬 Como Usar o Bot](#-como-usar-o-bot)
-10. [🛠️ Possíveis Erros e Soluções](#️-possiveis-erros-e-solucoes)
+10. [🔧️ Possíveis Erros e Soluções](#️-possiveis-erros-e-solucoes)
+11. [🎮 Como Usar o Playground do OpenAI](#-como-usar-o-playground-do-openai)
+12. [🛠️ Contribuição](#-contribuicao)
+13. [📜 Licença](#-licenca)
 
 ---
 
-## 📖 **Visão Geral**
+## 🖐 **Visão Geral**
 Este projeto é um sistema de automação de mensagens no **WhatsApp** utilizando a biblioteca **@periskope/whatsapp-web.js**. Ele se integra com a API da **OpenAI** para processar mensagens e realizar ações dinâmicas através do **Assistant Playground**. Também possui suporte para chamadas de API externas personalizadas.
 
 O sistema realiza as seguintes funções principais:
@@ -25,7 +29,7 @@ O sistema realiza as seguintes funções principais:
 
 ---
 
-## 🛠️ **Tecnologias Utilizadas**
+## 🔧️ **Tecnologias Utilizadas**
 - **Node.js**: Ambiente de execução para JavaScript no servidor.
 - **TypeScript**: Linguagem com tipagem estática.
 - **@periskope/whatsapp-web.js**: Integração com o WhatsApp Web.
@@ -97,65 +101,46 @@ O sistema realiza as seguintes funções principais:
 
 ---
 
-## 🔍 **Explicação dos Principais Arquivos**
-### **index.ts**
-- Inicializa o cliente do WhatsApp.
-- Gerencia eventos do WhatsApp (mensagens, QR Code, autenticação).
-- Processa as mensagens utilizando a API do OpenAI.
-- Faz chamadas a APIs externas e trata o resultado.
+## 🎮 **Como Usar o Playground do OpenAI**
+O OpenAI Playground permite criar **System Instructions** e **Functions** personalizadas para otimizar o comportamento da IA e definir fluxos de trabalho dinâmicos.
 
-### **cli/ui.ts**
-- Exibe o QR Code no terminal.
-- Gera mensagens de status amigáveis para o usuário.
+### 🔧 **Passo a Passo**
 
-### **config/index.ts**
-- Carrega e gerencia as variáveis de ambiente de forma centralizada.
+#### 1. **Acessar o Playground**
+- Acesse o site do OpenAI e navegue até a opção **Playground**.
+- Garanta que você esteja logado com uma conta com permissões de uso de IA da OpenAI.
 
-### **constants/sessionPath.ts**
-- Define o caminho de armazenamento da sessão do WhatsApp.
+#### 2. **Configurar a System Instruction**
+- A **System Instruction** define o contexto e as regras que o assistente seguirá ao responder.
+- Exemplo de System Instruction:
+  ```text
+  Você é um assistente de IA especializado em responder perguntas de forma clara e objetiva. Responda com empatia e mantenha a simplicidade nas suas respostas.
+  ```
 
----
-
-## 🚀 **Principais Funcionalidades**
-- **Recepção de mensagens do WhatsApp**: O bot responde automaticamente às mensagens recebidas.
-- **Conexão com OpenAI Assistant Playground**: As mensagens dos usuários são processadas usando IA.
-- **Execução de Tool Calls**: Permite chamadas de API personalizadas com métodos GET, POST, PUT e DELETE.
-- **Autenticação automática**: O QR Code é exibido para autenticação inicial.
-
----
-
-## 📢 **Eventos do WhatsApp**
-| Evento         | Descrição                            |
-|----------------|-------------------------------------|
-| `qr`           | Exibe o QR Code para escanear no app WhatsApp. |
-| `authenticated`| O cliente foi autenticado com sucesso. |
-| `auth_failure` | Falha ao tentar autenticar o cliente. |
-| `ready`        | O cliente está pronto para operar. |
-| `message`      | Recebe uma nova mensagem no WhatsApp. |
-
----
-
-## 💬 **Como Usar o Bot**
-1. Envie uma mensagem para o bot via WhatsApp.
-2. O bot responde automaticamente utilizando o OpenAI Assistant.
-3. O bot pode fazer chamadas de API personalizadas e retornar o resultado ao usuário.
-
-Exemplo de interação:
-- **Você**: "Olá bot!"
-- **Bot**: "Olá! Como posso te ajudar hoje?"
+#### 3. **Criar as Functions**
+- As **Functions** permitem que a IA chame funções específicas dentro do sistema, como consultas de API, chamadas de ferramentas externas, entre outros.
+- No OpenAI Playground, é possível criar uma **Function** clicando na opção "Add Function".
+- Exemplo de Function JSON:
+  ```json
+  {
+    "name": "get_weather",
+    "description": "Obtém a previsão do tempo para uma cidade especificada.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string",
+          "description": "O nome da cidade para a qual deseja a previsão do tempo."
+        }
+      },
+      "required": ["city"]
+    }
+  }
+  ```
 
 ---
 
-## 🛠️ **Possíveis Erros e Soluções**
-| **Erro**                          | **Causa**                                    | **Solução**                                |
-|-----------------------------------|--------------------------------------------|-------------------------------------------|
-| `API_BASE_URL não definida`       | Variável de ambiente API_BASE_URL faltando | Verifique o arquivo .env                   |
-| `Falha na autenticação do WhatsApp`| QR Code expirou ou sessão foi perdida      | Reinicie o bot e reescaneie o QR Code      |
-| `Erro ao processar a mensagem`     | Problema ao processar a resposta da IA    | Verifique se a API OpenAI está ativa      |
-
----
-
-## 🤝 **Contribuição**
+## 🛠️ **Contribuição**
 1. Faça um fork do repositório.
 2. Crie uma branch de recurso (`git checkout -b feature/nova-funcionalidade`).
 3. Envie suas alterações (`git commit -m 'Adiciona nova funcionalidade'`).
