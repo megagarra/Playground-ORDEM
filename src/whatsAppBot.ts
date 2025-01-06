@@ -103,7 +103,18 @@ async function processMessage(content: string): Promise<string> {
     });
 
     // Inicia o run
-    const run = await openai.beta.threads.runs.create(thread.id, { assistant_id: ASSISTANT_ID });
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: ASSISTANT_ID,
+      system_message: `
+        Você é um assistente que responde de forma clara e acolhedora, 
+        como em uma conversa no WhatsApp. Seja objetivo, mas não extremamente 
+        curto. Evite repetições desnecessárias e mantenha uma linguagem 
+        próxima, sem parecer robotizada. Responda em 3 a 5 frases, aproximadamente.
+      `,
+      max_tokens: 200, // Ajuste conforme necessário
+    });
+    
+    
 
 
     // Verifica o status inicial
