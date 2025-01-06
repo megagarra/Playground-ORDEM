@@ -1803,6 +1803,11 @@ node-fetch@^2.6.7, node-fetch@^2.6.9:
   dependencies:
     whatwg-url "^5.0.0"
 
+node-tesseract-ocr@^2.2.1:
+  version "2.2.1"
+  resolved "https://registry.npmjs.org/node-tesseract-ocr/-/node-tesseract-ocr-2.2.1.tgz#465fea1a1acd6720efb582d5f6c2bcbb82cce94d"
+  integrity sha512-Q9cD79JGpPNQBxbi1fV+OAsTxYKLpx22sagsxSyKbu1u+t6UarApf5m32uVc8a5QAP1Wk7fIPN0aJFGGEE9DyQ==
+
 node-webpmux@3.1.7:
   version "3.1.7"
   resolved "https://registry.npmjs.org/node-webpmux/-/node-webpmux-3.1.7.tgz"

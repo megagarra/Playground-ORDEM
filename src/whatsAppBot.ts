@@ -11,11 +11,6 @@ import path from 'path';
 
 dotenv.config();
 
-// Debug: Verificar variáveis de ambiente
-console.log('ENV API_BASE_URL:', process.env.API_BASE_URL);
-console.log('ENV OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'Definida' : 'Não definida');
-console.log('ENV ASSISTANT_ID:', process.env.ASSISTANT_ID);
-
 // Configuração da API OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const ASSISTANT_ID = process.env.ASSISTANT_ID;
@@ -35,12 +30,10 @@ async function callExternalAPI(
 ): Promise<string> {
   try {
     if (!process.env.API_BASE_URL) {
-      console.error('❌ ERRO: API_BASE_URL não definida nas variáveis de ambiente.');
       return '❌ Erro: API_BASE_URL não definida.';
     }
 
     const url = `${process.env.API_BASE_URL}${endpoint}`;
-    console.log('Chamando API externa:', { method, url, parameters });
 
     const response = await axios({
       method,
@@ -50,11 +43,10 @@ async function callExternalAPI(
       params: method === 'GET' ? parameters : undefined,
     });
 
-    console.log('Resposta da API externa:', response.data);
     return `✅ Sucesso:\n${JSON.stringify(response.data, null, 2)}`;
   } catch (error: any) {
     console.error('❌ Erro na API externa:', error?.message);
-    console.log('Detalhes do erro API externa:', error?.response?.data);
+
     return `❌ Erro: ${error.response?.data?.message || error.message}`;
   }
 }
@@ -97,75 +89,74 @@ async function transcribeAudio(base64Audio: string): Promise<string> {
  * @returns Resposta final do assistente
  */
 async function processMessage(content: string): Promise<string> {
-  console.log('processMessage - conteúdo da mensagem:', content);
+
 
   try {
     // Cria uma nova thread
     const thread = await openai.beta.threads.create();
-    console.log('Thread criada:', thread);
+
 
     // Envia a mensagem do usuário
     const userMsg = await openai.beta.threads.messages.create(thread.id, {
       role: 'user',
       content,
     });
-    console.log('Mensagem do usuário enviada para o thread:', userMsg);
 
     // Inicia o run
     const run = await openai.beta.threads.runs.create(thread.id, { assistant_id: ASSISTANT_ID });
-    console.log('Run criado:', run);
+
 
     // Verifica o status inicial
     let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-    console.log('Run status inicial:', runStatus);
+
 
     // Aguarda até o run sair de 'queued' ou 'in_progress'
     while (['queued', 'in_progress'].includes(runStatus.status)) {
-      console.log('Aguardando processamento do run...');
+      ('Aguardando processamento do run...');
       await new Promise((resolve) => setTimeout(resolve, 1000));
       runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      console.log('Run status atualizado:', runStatus);
+
     }
 
     // Caso o assistente exija chamada de função (tool)
     if (runStatus.required_action?.type === 'submit_tool_outputs') {
-      console.log('Run requer action submit_tool_outputs:', runStatus.required_action);
+
 
       const toolCalls = runStatus.required_action.submit_tool_outputs.tool_calls;
 
       // Para cada tool call, realiza a chamada externa e coleta o resultado
       const toolOutputs = await Promise.all(
         toolCalls.map(async (tool) => {
-          console.log('Processando tool call:', tool);
+
           const params = JSON.parse(tool.function.arguments);
-          console.log('Parâmetros do tool call:', params);
+
 
           const { endpoint, method = 'GET', ...otherParams } = params;
           const result = await callExternalAPI(endpoint, method as 'GET' | 'POST' | 'PUT' | 'DELETE', otherParams);
 
-          console.log('Resultado do tool call:', result);
+
           return { tool_call_id: tool.id, output: result };
         })
       );
 
       // Envia as saídas (tool_outputs) para o run
-      console.log('Enviando tool_outputs para o Run:', toolOutputs);
+
       await openai.beta.threads.runs.submitToolOutputs(thread.id, run.id, { tool_outputs: toolOutputs });
 
       // Aguarda até o run completar após a submissão das tools
       let finalRunStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
 
       while (['queued', 'in_progress', 'requires_action'].includes(finalRunStatus.status)) {
-        console.log('Aguardando a resposta final do assistente após tool_outputs...');
+        ('Aguardando a resposta final do assistente após tool_outputs...');
         await new Promise((resolve) => setTimeout(resolve, 1000));
         finalRunStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-        console.log('Run status pós-tool_outputs atualizado:', finalRunStatus);
+
       }
     }
 
     // Busca todas as mensagens do thread para encontrar a última do "assistant"
     const messages = await openai.beta.threads.messages.list(thread.id);
-    console.log('Mensagens retornadas pelo OpenAI:', JSON.stringify(messages, null, 2));
+
 
     // Encontra a última mensagem do assistente que contenha texto
     const assistantMessage = messages.data
@@ -192,7 +183,6 @@ async function processMessage(content: string): Promise<string> {
     }
   } catch (error: any) {
     console.error('Erro ao processar mensagem:', error?.message);
-    console.log('Detalhes do erro no processMessage:', error);
     return '❌ Erro ao processar a solicitação.';
   }
 }
@@ -201,7 +191,7 @@ async function processMessage(content: string): Promise<string> {
  * Inicializa o bot do WhatsApp e configura listeners para eventos importantes.
  */
 const start = async () => {
-  console.log('⏳ Inicializando o cliente do WhatsApp...');
+  ('⏳ Inicializando o cliente do WhatsApp...');
 
   const client = new Client({
     puppeteer: { args: ['--no-sandbox'] },
@@ -214,7 +204,6 @@ const start = async () => {
   });
 
   client.on('qr', (qr: string) => {
-    console.log('QR code recebido:', qr);
     qrEmitter.emit('qr', qr);
 
     qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
@@ -227,7 +216,7 @@ const start = async () => {
   });
 
   client.on('authenticated', () => {
-    console.log('Cliente WhatsApp autenticado.');
+    ('Cliente WhatsApp autenticado.');
     cli.printAuthenticated();
   });
 
@@ -237,22 +226,21 @@ const start = async () => {
   });
 
   client.on('ready', async () => {
-    console.log('Cliente WhatsApp pronto.');
+    ('Cliente WhatsApp pronto.');
     cli.printOutro();
   });
 
   client.on('message', async (message: Message) => {
-    console.log('Nova mensagem recebida:', message);
 
     try {
       // Ignora mensagens enviadas pelo próprio bot
       if (message.fromMe) {
-        console.log('Mensagem ignorada (enviada pelo próprio bot).');
+        ('Mensagem ignorada (enviada pelo próprio bot).');
         return;
       }
 
       const chat = await message.getChat();
-      console.log('Chat obtido:', chat.id._serialized);
+
       await chat.sendStateTyping(); // Simula "digitando..."
 
       // Se for áudio (voice note), transcreve; se for texto, segue normal.
@@ -260,28 +248,25 @@ const start = async () => {
 
       // Tipos ptt ou audio representam áudios no WhatsApp
       if (message.type === 'ptt' || message.type === 'audio') {
-        console.log('Recebido um áudio. Iniciando transcrição...');
+        ('Recebido um áudio. Iniciando transcrição...');
         if (!message.hasMedia) {
           // Caso raro: a mensagem está marcada como áudio, mas sem mídia.
           throw new Error('Mensagem de áudio sem mídia disponível.');
         }
         const media = await message.downloadMedia(); // baixa o áudio em base64
         userMessage = await transcribeAudio(media.data);
-        console.log('Áudio transcrito com sucesso! Texto:', userMessage);
       } else {
         // Caso não seja áudio, tratamos como texto
         userMessage = message.body.trim();
       }
 
-      console.log('Conteúdo da mensagem do usuário:', userMessage);
 
       // Processa usando o Playground do OpenAI
       const response = await processMessage(userMessage);
-      console.log('Resposta do assistente:', response);
 
       // Envia a resposta ao usuário no WhatsApp
       await message.reply(response);
-      console.log('Resposta enviada ao usuário.');
+      ('Resposta enviada ao usuário.');
 
       await chat.clearState(); // Para de simular "digitando..."
     } catch (error) {
