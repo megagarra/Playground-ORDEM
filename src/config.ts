@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Validação das variáveis de ambiente
-const requiredEnvVars = ['WHATSAPP_NUMBER', 'OPENAI_API_KEY'];
+const requiredEnvVars = ['OPENAI_API_KEY'];
 
 requiredEnvVars.forEach((varName) => {
   if (!process.env[varName]) {
