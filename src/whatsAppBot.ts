@@ -7,52 +7,12 @@ import path from 'path';
 import fs from 'fs';
 import { ReadStream } from 'fs';
 import OpenAI from 'openai';
+import config from './config';
+
+// ✨ Importa do arquivo de banco (Thread e agora ThreadMessage)
+import { Thread, ThreadMessage, IThreadModel } from './database';
 
 dotenv.config();
-
-/******************************************************************************
- * Exemplo mínimo de "config"
- ******************************************************************************/
-const config = {
-  openAIAPIKey: process.env.OPENAI_API_KEY || '', // Ajuste se preferir
-};
-
-/******************************************************************************
- * Exemplo mínimo de "Thread" (Banco de dados simulado)
- * Em produção, use seu ORM (Sequelize, Prisma, etc.) e salve no BD de fato.
- ******************************************************************************/
-interface IThread {
-  identifier: string;
-  openai_thread_id: string;
-  medium?: string;
-}
-
-const mockDB: IThread[] = [];
-
-async function findThreadByIdentifier(identifier: string): Promise<IThread | undefined> {
-  return mockDB.find((t) => t.identifier === identifier);
-}
-
-async function createThreadInDB(thread: IThread): Promise<IThread> {
-  mockDB.push(thread);
-  return thread;
-}
-
-/******************************************************************************
- * Exemplo mínimo de "cli/ui" (impressões no console)
- ******************************************************************************/
-function printQRCode(qrCodeAscii: string) {
-  console.log(qrCodeAscii);
-}
-function printAuthenticated() {
-  console.log('✅ Autenticado com sucesso!');
-}
-function printAuthenticationFailure() {
-  console.log('❌ Falha na autenticação!');
-}
-function printOutro() {
-  console.log('✅ Bot pronto para receber mensagens!');
-}
 
 /******************************************************************************
  * 1) Cria o client do OpenAI
@@ -70,7 +30,7 @@ export async function transcribeAudio(base64Audio: string): Promise<string> {
 
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempFilePath),
-      model: 'whisper-1',
+      model: 'whisper-1'
       // language: 'pt', // descomente se quiser forçar PT-BR
     });
 
@@ -85,39 +45,58 @@ export async function transcribeAudio(base64Audio: string): Promise<string> {
 /******************************************************************************
  * 3) Localiza ou cria Thread no "banco" e também na OpenAI
  ******************************************************************************/
-export async function findOrCreateThread(identifier: string, meta?: any) {
+async function findThreadByIdentifier(identifier: string) {
+  return Thread.findOne({ where: { identifier } });
+}
+
+async function createThreadInDB(data: {
+  identifier: string;
+  openai_thread_id: string;
+  medium?: string;
+}) {
+  return Thread.create(data);
+}
+
+/**
+ * Retorna o próprio objeto Thread (com .id e .openai_thread_id)
+ */
+export async function findOrCreateThread(identifier: string, meta?: any): Promise<IThreadModel> {
+  // 1. Tenta achar no BD
   const existing = await findThreadByIdentifier(identifier);
   if (existing) {
     console.log('Thread já existe no banco:', existing.openai_thread_id);
-    return existing.openai_thread_id;
+    return existing;
   }
 
-  // Cria uma thread na OpenAI
+  // 2. Cria a thread na OpenAI
   const openaiThread = await openai.beta.threads.create({
     metadata: { identifier, medium: 'whatsapp', ...meta }
   });
 
-  // Salva no "banco"
+  // 3. Salva no BD
   const newThread = await createThreadInDB({
     identifier,
     openai_thread_id: openaiThread.id,
     medium: 'whatsapp'
   });
 
-  console.log('Nova thread criada:', newThread);
-  return openaiThread.id;
+  console.log('Nova thread criada:', newThread.get());
+  return newThread;
 }
 
 /******************************************************************************
  * 4) assistantResponse: envia prompt ao Thread, cria 'run' e faz polling
+ *
+ * Agora passamos a "threadId" (openAI) e "dbThreadId" (ID local no BD)
  ******************************************************************************/
+// Função principal que dispara a mensagem ao assistente e retorna a resposta
 export async function assistantResponse(
-  threadId: string,
+  threadId: string,           // ID da thread na OpenAI
   prompt: string,
   tools: any[] = [],
   callback?: (run: any) => Promise<any>
 ) {
-  // Verifica se existe algum run pendente
+  // Verifica se existe run pendente
   const runs = await openai.beta.threads.runs.list(threadId);
   if (runs?.data?.length > 0) {
     const lastRun = runs.data[runs.data.length - 1];
@@ -128,7 +107,7 @@ export async function assistantResponse(
     }
   }
 
-  // Cria mensagem do usuário
+  // Cria mensagem do usuário (no endpoint da OpenAI)
   await openai.beta.threads.messages.create(threadId, {
     role: 'user',
     content: prompt
@@ -138,7 +117,7 @@ export async function assistantResponse(
   const run = await openai.beta.threads.runs.create(threadId, {
     tools,
     tool_choice: 'auto',
-    assistant_id: 'asst_NnOLt2VjnIcdUe3ex8jDsTIU', // Ajuste para seu ID do assistente
+    assistant_id: config.assistantId || 'asst_NnOLt2VjnIcdUe3ex8jDsTIU',
     additional_instructions: `
       Você está conversando via WhatsApp, responda de forma natural e direta.
       Ocasionalmente use emojis para se comunicar.
@@ -149,15 +128,17 @@ export async function assistantResponse(
 
   let currentRun = await openai.beta.threads.runs.retrieve(threadId, run.id);
 
+  // Loop de polling até terminar
   while (['queued', 'in_progress', 'requires_action'].includes(currentRun.status)) {
     if (currentRun.status === 'requires_action' && callback) {
       // Se a IA solicitou tools, executamos
       const outputs = await callback(currentRun);
       await openai.beta.threads.runs.submitToolOutputs(threadId, run.id, {
-        tool_outputs: outputs?.map((o: any) => ({
-          tool_call_id: o.id,
-          output: JSON.stringify(o.output)
-        })) || []
+        tool_outputs:
+          outputs?.map((o: any) => ({
+            tool_call_id: o.id,
+            output: JSON.stringify(o.output)
+          })) || []
       });
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -170,7 +151,11 @@ export async function assistantResponse(
     .filter((m: any) => m.run_id === run.id && m.role === 'assistant')
     .pop();
 
-  if (lastAssistantMsg && lastAssistantMsg.content && lastAssistantMsg.content[0]?.text?.value) {
+  if (
+    lastAssistantMsg &&
+    lastAssistantMsg.content &&
+    lastAssistantMsg.content[0]?.text?.value
+  ) {
     return lastAssistantMsg.content[0].text.value;
   }
 
@@ -202,23 +187,23 @@ export const start = async () => {
         console.error('Erro ao converter QR code:', err);
         return;
       }
-      printQRCode(url);
+      console.log(url); // Imprime o ASCII QR no terminal
     });
   });
 
   client.on('authenticated', () => {
     console.log('Cliente WhatsApp autenticado.');
-    printAuthenticated();
+    console.log('✅ Autenticado com sucesso!');
   });
 
   client.on('auth_failure', (msg) => {
     console.error('Falha na autenticação do WhatsApp:', msg);
-    printAuthenticationFailure();
+    console.log('❌ Falha na autenticação!');
   });
 
   client.on('ready', async () => {
     console.log('Cliente WhatsApp pronto.');
-    printOutro();
+    console.log('✅ Bot pronto para receber mensagens!');
   });
 
   client.on('message', async (message: Message) => {
@@ -233,6 +218,7 @@ export const start = async () => {
 
       let userMessage: string;
 
+      // Se for áudio/ptt, transcreve
       if (message.type === 'ptt' || message.type === 'audio') {
         if (!message.hasMedia) {
           throw new Error('Mensagem de áudio sem mídia disponível.');
@@ -245,14 +231,28 @@ export const start = async () => {
         userMessage = message.body.trim();
       }
 
-      // Localiza ou cria a thread para esse contato
-      const threadId = await findOrCreateThread(message.from);
+      // Localiza ou cria a thread para esse contato (retorna o objeto do BD)
+      const dbThread = await findOrCreateThread(message.from);
 
-      // Envia ao assistente (OpenAI) e aguarda a resposta
-      const response = await assistantResponse(threadId, userMessage);
+      // 1) Salva mensagem do usuário no BD
+      await ThreadMessage.create({
+        thread_id: dbThread.id!, // "!": assumimos que 'id' existe
+        role: 'user',
+        content: userMessage
+      });
+
+      // 2) Envia ao assistente (OpenAI) e aguarda a resposta
+      const response = await assistantResponse(dbThread.openai_thread_id, userMessage);
       console.log('Resposta do assistente:', response);
 
-      // Envia de volta no WhatsApp
+      // 3) Salva resposta do assistente no BD
+      await ThreadMessage.create({
+        thread_id: dbThread.id!,
+        role: 'assistant',
+        content: response
+      });
+
+      // 4) Envia de volta no WhatsApp
       await message.reply(response || '[sem resposta do assistant]');
       console.log('Mensagem enviada ao usuário.');
 

@@ -1,90 +1,159 @@
+// database.ts
 import { Sequelize, DataTypes, Model, InferAttributes, InferCreationAttributes } from 'sequelize';
 import dotenv from 'dotenv';
 
-// Carrega variáveis de ambiente do .env
 dotenv.config();
 
-// Configuração do banco de dados
-const db = new Sequelize(process.env.DB_SCHEMA || 'postgres', process.env.DB_USER || 'postgres', process.env.DB_PASSWORD || 'postgres', {
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT) || 5432,
-    dialect: 'postgres',
-    dialectOptions: {
-        ssl: process.env.DB_SSL === 'true'
-    },
-    pool: {
-        max: 5,
-        min: 0,
-        acquire: 30000,
-        idle: 10000
-    },
-    logging: console.log // Exibe logs de queries (opcional)
+// Substitua pela sua URL, ou use .env (DATABASE_URL=...):
+const DB_URL =
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:PHUFShGDHeMBZjDIEvvnIaPboExBifWS@gondola.proxy.rlwy.net:12251/railway';
+
+// Cria a conexão usando a Connection String completa
+export const db = new Sequelize(DB_URL, {
+  dialect: 'postgres',
+  // Se precisar de SSL no Railway, descomente:
+  // dialectOptions: {
+  //   ssl: {
+  //     require: true,
+  //     rejectUnauthorized: false,
+  //   },
+  // },
+  pool: {
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
+  },
+  logging: console.log
 });
 
-// Interface para o modelo Thread
-interface Thread extends Model<InferAttributes<Thread>, InferCreationAttributes<Thread>> {
-    medium: string;
-    identifier: string;
-    openai_thread_id: string;
-    createdAt: Date;
-    updatedAt: Date;
+/******************************************************************************
+ * MODELO Thread (já existente)
+ ******************************************************************************/
+export interface IThreadModel
+  extends Model<InferAttributes<IThreadModel>, InferCreationAttributes<IThreadModel>> {
+  id?: number;
+  medium: string;
+  identifier: string;
+  openai_thread_id: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-// Definição do modelo Thread
-export const Thread = db.define<Thread>('thread', {
-    medium: {
-        type: DataTypes.STRING,
-        allowNull: false
-    },
-    identifier: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
-    },
-    openai_thread_id: {
-        type: DataTypes.STRING,
-        allowNull: false
-    },
-    createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        field: 'createdat' // Garante compatibilidade com PostgreSQL
-    },
-    updatedAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        field: 'updatedat'
-    }
+export const Thread = db.define<IThreadModel>('thread', {
+  medium: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  identifier: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true
+  },
+  openai_thread_id: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  createdAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    field: 'createdat',
+    defaultValue: DataTypes.NOW
+  },
+  updatedAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    field: 'updatedat',
+    defaultValue: DataTypes.NOW
+  }
 }, {
-    tableName: 'threads',
-    timestamps: true
+  tableName: 'threads',
+  timestamps: true
 });
 
-// Função para inicializar e criar a tabela caso não exista
-const initializeDatabase = async () => {
-    try {
-        await db.authenticate();
-        console.log('✅ Conectado ao banco de dados.');
+/******************************************************************************
+ * MODELO ThreadMessage (novo)
+ ******************************************************************************/
+export interface IThreadMessageModel
+  extends Model<InferAttributes<IThreadMessageModel>, InferCreationAttributes<IThreadMessageModel>> {
+  id?: number;
+  thread_id: number;       // referência ao ID da thread
+  role: string;            // 'user' ou 'assistant'
+  content: string;         // mensagem de texto
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
-        // Criando a tabela se não existir
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS threads (
-                id SERIAL PRIMARY KEY,
-                medium VARCHAR(255) NOT NULL,
-                identifier VARCHAR(255) UNIQUE NOT NULL,
-                openai_thread_id VARCHAR(255) NOT NULL,
-                createdat TIMESTAMP DEFAULT NOW(),
-                updatedat TIMESTAMP DEFAULT NOW()
-            );
-        `);
+export const ThreadMessage = db.define<IThreadMessageModel>('thread_message', {
+  thread_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  role: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  content: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  createdAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    field: 'createdat',
+    defaultValue: DataTypes.NOW
+  },
+  updatedAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    field: 'updatedat',
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'thread_messages',
+  timestamps: true
+});
 
-        console.log('✅ Tabela "threads" verificada/criada com sucesso.');
-    } catch (error) {
-        console.error('❌ Erro ao conectar/criar tabela:', error);
-    }
-};
 
-// Executa a inicialização do banco
+/******************************************************************************
+ * Inicializa
+ ******************************************************************************/
+async function initializeDatabase() {
+  try {
+    await db.authenticate();
+    console.log('✅ Conectado ao banco de dados.');
+
+    // Cria a tabela threads se não existir
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS threads (
+        id SERIAL PRIMARY KEY,
+        medium VARCHAR(255) NOT NULL,
+        identifier VARCHAR(255) UNIQUE NOT NULL,
+        openai_thread_id VARCHAR(255) NOT NULL,
+        createdat TIMESTAMP DEFAULT NOW(),
+        updatedat TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Cria a tabela thread_messages se não existir
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS thread_messages (
+        id SERIAL PRIMARY KEY,
+        thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        role VARCHAR(50) NOT NULL,
+        content TEXT NOT NULL,
+        createdat TIMESTAMP DEFAULT NOW(),
+        updatedat TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    console.log('✅ Tabelas verificadas/criadas com sucesso.');
+  } catch (error) {
+    console.error('❌ Erro ao conectar/criar tabelas:', error);
+  }
+}
+
 initializeDatabase();
 
 export default db;
