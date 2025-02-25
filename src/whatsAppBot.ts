@@ -16,12 +16,12 @@ dotenv.config();
 
 /******************************************************************************
  * 1) Cria o client do OpenAI
- ******************************************************************************/
+ *****************************************************************************/
 export const openai = new OpenAI({ apiKey: config.openAIAPIKey });
 
 /******************************************************************************
  * 2) Função de transcrição de áudio (salva em .mp3, chama Whisper)
- ******************************************************************************/
+ *****************************************************************************/
 export async function transcribeAudio(base64Audio: string): Promise<string> {
   try {
     const tempFilePath = path.join(__dirname, 'tempAudio.mp3');
@@ -43,9 +43,12 @@ export async function transcribeAudio(base64Audio: string): Promise<string> {
 }
 
 /******************************************************************************
- * 3) Localiza ou cria Thread no "banco" e também na OpenAI
- ******************************************************************************/
-async function findThreadByIdentifier(identifier: string) {
+ * 3) Localiza ou cria Thread no "banco" e também na OpenAI com cache em memória
+ *****************************************************************************/
+// Cache em memória para armazenar threads e evitar consultas repetidas
+const threadCache = new Map<string, IThreadModel>();
+
+async function findThreadByIdentifier(identifier: string): Promise<IThreadModel | null> {
   return Thread.findOne({ where: { identifier } });
 }
 
@@ -53,7 +56,7 @@ async function createThreadInDB(data: {
   identifier: string;
   openai_thread_id: string;
   medium?: string;
-}) {
+}): Promise<IThreadModel> {
   return Thread.create(data);
 }
 
@@ -61,41 +64,50 @@ async function createThreadInDB(data: {
  * Retorna o próprio objeto Thread (com .id e .openai_thread_id)
  */
 export async function findOrCreateThread(identifier: string, meta?: any): Promise<IThreadModel> {
-  // 1. Tenta achar no BD
+  // 1. Verifica se a thread já está no cache
+  if (threadCache.has(identifier)) {
+    console.log('Thread encontrada no cache:', threadCache.get(identifier)?.openai_thread_id);
+    return threadCache.get(identifier)!;
+  }
+
+  // 2. Tenta achar no banco de dados
   const existing = await findThreadByIdentifier(identifier);
   if (existing) {
-    console.log('Thread já existe no banco:', existing.openai_thread_id);
+    threadCache.set(identifier, existing);
+    console.log('Thread encontrada no banco e adicionada ao cache:', existing.openai_thread_id);
     return existing;
   }
 
-  // 2. Cria a thread na OpenAI
+  // 3. Cria a thread na OpenAI
   const openaiThread = await openai.beta.threads.create({
     metadata: { identifier, medium: 'whatsapp', ...meta }
   });
 
-  // 3. Salva no BD
+  // 4. Salva a nova thread no banco
   const newThread = await createThreadInDB({
     identifier,
     openai_thread_id: openaiThread.id,
     medium: 'whatsapp'
   });
 
-  console.log('Nova thread criada:', newThread.get());
+  // 5. Armazena a nova thread no cache
+  threadCache.set(identifier, newThread);
+  console.log('Nova thread criada e adicionada ao cache:', newThread.get());
+
   return newThread;
 }
 
 /******************************************************************************
  * 4) assistantResponse: envia prompt ao Thread, cria 'run' e faz polling
- *
  * Agora passamos a "threadId" (openAI) e "dbThreadId" (ID local no BD)
- ******************************************************************************/
+ *****************************************************************************/
 // Função principal que dispara a mensagem ao assistente e retorna a resposta
 export async function assistantResponse(
   threadId: string,           // ID da thread na OpenAI
   prompt: string,
   tools: any[] = [],
   callback?: (run: any) => Promise<any>
-) {
+): Promise<string> {
   // Verifica se existe run pendente
   const runs = await openai.beta.threads.runs.list(threadId);
   if (runs?.data?.length > 0) {
@@ -164,7 +176,7 @@ export async function assistantResponse(
 
 /******************************************************************************
  * 5) Inicializa o bot do WhatsApp e configura o listener de mensagens
- ******************************************************************************/
+ *****************************************************************************/
 const qrEmitter = new EventEmitter();
 export { qrEmitter };
 
@@ -187,7 +199,7 @@ export const start = async () => {
         console.error('Erro ao converter QR code:', err);
         return;
       }
-      console.log(url); // Imprime o ASCII QR no terminal
+      console.log(url); // Imprime o QR code em ASCII no terminal
     });
   });
 
@@ -218,7 +230,7 @@ export const start = async () => {
 
       let userMessage: string;
 
-      // Se for áudio/ptt, transcreve
+      // Se for áudio/ptt, realiza a transcrição
       if (message.type === 'ptt' || message.type === 'audio') {
         if (!message.hasMedia) {
           throw new Error('Mensagem de áudio sem mídia disponível.');
