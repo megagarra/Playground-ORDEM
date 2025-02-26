@@ -5,15 +5,17 @@
 	"main": "src/index.ts",
 	"author": "alexandegarra",
 	"scripts": {
-		"dev": "ts-node-dev --respawn --transpile-only --exit-child src/index.ts",
-		"start": "yarn migrate && npx vite-node src/index.ts",
+		"worker": "ts-node src/worker.ts",
 		"prettier": "prettier --write ./src",
-		"migrate": "npx vite-node src/bin/migrate.ts"
+		"migrate": "npx vite-node src/bin/migrate.ts",
+		"dev": "concurrently \"npx vite-node src/index.ts\" \"ts-node src/worker.ts\"",
+		"start": "yarn migrate && yarn dev"
 	},
 	"license": "MIT",
 	"dependencies": {
 		"@periskope/whatsapp-web.js": "^1.25.0-bk.4",
 		"axios": "^1.7.8",
+		"concurrently": "^9.1.2",
 		"dotenv": "^16.3.1",
 		"elevenlabs-node": "^2.0.1",
 		"express": "^4.18.2",
@@ -27,6 +29,7 @@
 		"picocolors": "^1.0.0",
 		"puppeteer": "^23.11.1",
 		"qrcode": "^1.5.3",
+		"redis": "^4.7.0",
 		"sequelize": "^6.35.2",
 		"tesseract.js": "^6.0.0"
 	},
