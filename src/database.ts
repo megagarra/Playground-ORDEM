@@ -1,13 +1,12 @@
-// database.ts
 import { Sequelize, DataTypes, Model, InferAttributes, InferCreationAttributes } from 'sequelize';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Substitua pela sua URL, ou use .env (DATABASE_URL=...):
+// Substitua pela sua URL ou use .env (DATABASE_URL=...):
 const DB_URL =
   process.env.DATABASE_URL ||
-  'postgresql://postgres:PHUFShGDHeMBZjDIEvvnIaPboExBifWS@gondola.proxy.rlwy.net:12251/railway';
+  '';
 
 // Cria a conexão usando a Connection String completa
 export const db = new Sequelize(DB_URL, {
@@ -29,14 +28,15 @@ export const db = new Sequelize(DB_URL, {
 });
 
 /******************************************************************************
- * MODELO Thread (já existente)
- ******************************************************************************/
+ * MODELO Thread (já existente) - agora com flag "paused"
+ *****************************************************************************/
 export interface IThreadModel
   extends Model<InferAttributes<IThreadModel>, InferCreationAttributes<IThreadModel>> {
   id?: number;
   medium: string;
   identifier: string;
   openai_thread_id: string;
+  paused: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -54,6 +54,11 @@ export const Thread = db.define<IThreadModel>('thread', {
   openai_thread_id: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  paused: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
   },
   createdAt: {
     type: DataTypes.DATE,
@@ -74,7 +79,7 @@ export const Thread = db.define<IThreadModel>('thread', {
 
 /******************************************************************************
  * MODELO ThreadMessage (novo)
- ******************************************************************************/
+ *****************************************************************************/
 export interface IThreadMessageModel
   extends Model<InferAttributes<IThreadMessageModel>, InferCreationAttributes<IThreadMessageModel>> {
   id?: number;
@@ -115,22 +120,22 @@ export const ThreadMessage = db.define<IThreadMessageModel>('thread_message', {
   timestamps: true
 });
 
-
 /******************************************************************************
  * Inicializa
- ******************************************************************************/
+ *****************************************************************************/
 async function initializeDatabase() {
   try {
     await db.authenticate();
     console.log('✅ Conectado ao banco de dados.');
 
-    // Cria a tabela threads se não existir
+    // Cria a tabela threads se não existir (incluindo o campo "paused")
     await db.query(`
       CREATE TABLE IF NOT EXISTS threads (
         id SERIAL PRIMARY KEY,
         medium VARCHAR(255) NOT NULL,
         identifier VARCHAR(255) UNIQUE NOT NULL,
         openai_thread_id VARCHAR(255) NOT NULL,
+        paused BOOLEAN NOT NULL DEFAULT false,
         createdat TIMESTAMP DEFAULT NOW(),
         updatedat TIMESTAMP DEFAULT NOW()
       );

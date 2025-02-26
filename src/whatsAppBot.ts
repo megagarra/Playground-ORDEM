@@ -9,7 +9,7 @@ import { ReadStream } from 'fs';
 import OpenAI from 'openai';
 import config from './config';
 
-// ✨ Importa do arquivo de banco (Thread e agora ThreadMessage)
+// ✨ Importa do arquivo de banco (Thread e ThreadMessage)
 import { Thread, ThreadMessage, IThreadModel } from './database';
 
 dotenv.config();
@@ -65,7 +65,7 @@ async function processImageWithVision(media: any): Promise<ProcessResult> {
         {
           role: "user",
           content: [
-            { type: "text", text: "Analise esta imagem e descreva o que há nela, identificando pessoas, animais, objetos e outros detalhes importantes." },
+            { type: "text", text: "Faça uma analise completa da imagem ou arquvio, não perca nenhum delathe, e faça o detalhamento" },
             {
               type: "image_url",
               image_url: { url: dataUrl }
@@ -132,10 +132,8 @@ async function processFileAttachment(media: any): Promise<ProcessResult> {
 }
 
 /******************************************************************************
- * 4) Localiza ou cria Thread no "banco" e também na OpenAI com cache em memória
+ * 4) Localiza ou cria Thread no "banco" e também na OpenAI (sem cache)
  *****************************************************************************/
-const threadCache = new Map<string, IThreadModel>();
-
 async function findThreadByIdentifier(identifier: string): Promise<IThreadModel | null> {
   return Thread.findOne({ where: { identifier } });
 }
@@ -149,17 +147,10 @@ async function createThreadInDB(data: {
 }
 
 export async function findOrCreateThread(identifier: string, meta?: any): Promise<IThreadModel> {
-  // Verifica se a thread já está no cache
-  if (threadCache.has(identifier)) {
-    console.log('Thread encontrada no cache:', threadCache.get(identifier)?.openai_thread_id);
-    return threadCache.get(identifier)!;
-  }
-
   // Tenta achar no banco de dados
   const existing = await findThreadByIdentifier(identifier);
   if (existing) {
-    threadCache.set(identifier, existing);
-    console.log('Thread encontrada no banco e adicionada ao cache:', existing.openai_thread_id);
+    console.log('Thread encontrada no banco:', existing.openai_thread_id);
     return existing;
   }
 
@@ -168,17 +159,14 @@ export async function findOrCreateThread(identifier: string, meta?: any): Promis
     metadata: { identifier, medium: 'whatsapp', ...meta }
   });
 
-  // Salva a nova thread no banco
+  // Salva a nova thread no banco (por padrão, "paused" será false)
   const newThread = await createThreadInDB({
     identifier,
     openai_thread_id: openaiThread.id,
     medium: 'whatsapp'
   });
 
-  // Armazena a nova thread no cache
-  threadCache.set(identifier, newThread);
-  console.log('Nova thread criada e adicionada ao cache:', newThread.get());
-
+  console.log('Nova thread criada:', newThread.get());
   return newThread;
 }
 
@@ -305,6 +293,15 @@ export const start = async () => {
         return;
       }
 
+      // Recupera ou cria a thread correspondente à conversa
+      const dbThread = await findOrCreateThread(message.from);
+
+      // Verifica se a conversa está pausada (status armazenado no banco)
+      if (dbThread.paused) {
+        console.log(`Conversa com ${message.from} está pausada. Ignorando mensagem.`);
+        return;
+      }
+
       const chat = await message.getChat();
       await chat.sendStateTyping();
 
@@ -329,7 +326,6 @@ export const start = async () => {
           } else {
             finalMessage += `Não foi possível extrair ou reconhecer conteúdo significativo na imagem. Detalhes: ${result.text}\n\n`;
           }
-          // Se desejar, pode exibir labels ou outros detalhes aqui
           userMessage = finalMessage;
           console.log('Resultado do processamento do arquivo:', userMessage);
         }
@@ -337,9 +333,6 @@ export const start = async () => {
         // Se for mensagem de texto
         userMessage = message.body.trim();
       }
-
-      // Localiza ou cria a thread para esse contato (retorna o objeto do BD)
-      const dbThread = await findOrCreateThread(message.from);
 
       // 1) Salva mensagem do usuário no BD
       await ThreadMessage.create({

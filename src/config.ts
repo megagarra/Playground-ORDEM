@@ -21,7 +21,8 @@ export const config = {
   whatsAppNumber: process.env.WHATSAPP_NUMBER,
   openAIAPIKey: process.env.OPENAI_API_KEY,
   API_BASE_URL: process.env.API_BASE_URL,
-  assistantId: process.env.ASSISTANT_ID
+  assistantId: process.env.ASSISTANT_ID,
+  botName: process.env.BOT_NAME
   
 };
 
