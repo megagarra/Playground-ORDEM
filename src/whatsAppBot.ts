@@ -163,11 +163,7 @@ export async function assistantResponse(
   const run = await openai.beta.threads.runs.create(threadId, {
     tools: [],
     tool_choice: 'none',
-    assistant_id: config.assistantId || 'asst_NnOLt2VjnIcdUe3ex8jDsTIU',
-    additional_instructions: `
-      Você está conversando via WhatsApp, responda de forma natural e direta.
-      Ocasionalmente use emojis para se comunicar.
-    `
+    assistant_id: config.assistantId || '',
   });
   let currentRun = await openai.beta.threads.runs.retrieve(threadId, run.id);
   while (['queued', 'in_progress', 'requires_action'].includes(currentRun.status)) {
