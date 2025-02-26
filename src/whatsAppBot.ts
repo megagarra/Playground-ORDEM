@@ -226,7 +226,7 @@ interface Aggregator {
   chat: Chat;
 }
 const messageAggregators: Map<string, Aggregator> = new Map();
-const DEBOUNCE_DELAY = 5000; // 5 segundos
+const DEBOUNCE_DELAY = 3000; // 5 segundos
 
 async function processAggregatedMessage(sender: string, aggregator: Aggregator) {
   try {
