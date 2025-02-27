@@ -11,20 +11,19 @@ const DB_URL =
 // Cria a conexão usando a Connection String completa
 export const db = new Sequelize(DB_URL, {
   dialect: 'postgres',
-  // Se precisar de SSL no Railway, descomente:
-  // dialectOptions: {
-  //   ssl: {
-  //     require: true,
-  //     rejectUnauthorized: false,
-  //   },
-  // },
+  dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false, // Important for Railway
+    },
+  },
   pool: {
     max: 5,
     min: 0,
     acquire: 30000,
     idle: 10000
   },
-  logging: console.log
+  logging: false // Disable logging in production
 });
 
 /******************************************************************************

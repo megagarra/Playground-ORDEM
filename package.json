@@ -5,11 +5,12 @@
 	"main": "src/index.ts",
 	"author": "alexandegarra",
 	"scripts": {
-		"worker": "ts-node src/worker.ts",
+
 		"prettier": "prettier --write ./src",
 		"migrate": "npx vite-node src/bin/migrate.ts",
-		"dev": "concurrently \"npx vite-node src/index.ts\" \"ts-node src/worker.ts\"",
-		"start": "yarn migrate && yarn dev"
+		"start": "NODE_OPTIONS=--openssl-legacy-provider npx vite-node src/index.ts",
+  		"worker": "NODE_OPTIONS=--openssl-legacy-provider ts-node src/worker.ts",
+  		"dev": "concurrently \"npm run start\" \"npm run worker\""
 	},
 	"license": "MIT",
 	"dependencies": {

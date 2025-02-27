@@ -354,24 +354,10 @@ export { qrEmitter };
 
 export const start = async () => {
   console.log('⏳ Inicializando cliente do WhatsApp...');
-  const isRailway = process.env.RAILWAY_ENVIRONMENT === 'production';
-  
   const client = new WhatsAppClient({
     puppeteer: {
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ],
-      // Não especifique o executablePath no Railway
-      ...(isRailway ? {} : {
-        executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe'
-      })
+      args: ['--no-sandbox'],
+      executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe'
     },
     authStrategy: new LocalAuth({ dataPath: path.join(process.cwd(), 'session') }),
     webVersionCache: {
