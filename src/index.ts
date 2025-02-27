@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import { start, qrEmitter, findOrCreateThread } from './whatsAppBot';
 import { Thread } from './database';
 import { config, initializeConfig } from './config';
@@ -9,6 +10,20 @@ import path from 'path';
 
 const app = express();
 app.use(express.json());
+
+app.use(cors({
+    origin: (origin, callback) => {
+      const whitelist = [
+        'http://localhost:3000',
+      ];
+      
+      if (!origin || whitelist.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  }));
 
 const PORT = process.env.NODE_DOCKER_PORT || 8080;
 
