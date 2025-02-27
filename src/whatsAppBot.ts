@@ -357,7 +357,6 @@ export const start = async () => {
   const isRailway = process.env.RAILWAY_ENVIRONMENT === 'production';
   const client = new WhatsAppClient({
     puppeteer: {
-    executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -368,10 +367,8 @@ export const start = async () => {
         '--single-process',
         '--disable-gpu'
       ],
-      // NÃ£o especifique o executablePath no Railway
-     ...(isRailway ? {} : {
-        executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe'
-      })
+      // Use a variável de ambiente definida no Dockerfile
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
     },
     authStrategy: new LocalAuth({ dataPath: path.join(process.cwd(), 'session') }),
     webVersionCache: {
