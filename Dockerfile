@@ -26,5 +26,9 @@ COPY . .
 # Expõe a porta
 EXPOSE 8080
 
+# Adicione esto ao seu Dockerfile
+ENV DATABASE_URL=''
+ENV RAILWAY_ENVIRONMENT=''
+
 # Comando para iniciar a aplicação
-CMD ["yarn", "dev"]
+CMD ["yarn", "start"]
