@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import OpenAI from 'openai';
-import config from './config';
+import { config, refreshConfig } from './config';
 import { Thread, ThreadMessage, IThreadModel } from './database';
 
 dotenv.config();
@@ -14,7 +14,36 @@ dotenv.config();
 /******************************************************************************
  * 1) Cria o client do OpenAI
  *****************************************************************************/
-export const openai = new OpenAI({ apiKey: config.openAIAPIKey });
+// Variável para armazenar a instância do OpenAI
+let openaiInstance: OpenAI | null = null;
+
+// Função para obter/criar o cliente OpenAI
+export function getOpenAI(): OpenAI {
+  if (!openaiInstance) {
+    console.log(`Inicializando cliente OpenAI com chave: ${config.openAIAPIKey.substring(0, 5)}...`);
+    openaiInstance = new OpenAI({ 
+      apiKey: config.openAIAPIKey 
+    });
+  }
+  return openaiInstance;
+}
+
+// Função para atualizar o cliente OpenAI quando as configurações mudarem
+export async function refreshOpenAIClient() {
+  console.log('Atualizando cliente OpenAI...');
+  await refreshConfig();
+  
+  // Recria a instância com a nova chave
+  openaiInstance = new OpenAI({ 
+    apiKey: config.openAIAPIKey 
+  });
+  
+  console.log(`Cliente OpenAI atualizado com chave: ${config.openAIAPIKey.substring(0, 5)}...`);
+  return openaiInstance;
+}
+
+// Exporta openai como uma variável para compatibilidade com código existente
+export const openai = getOpenAI();
 
 /******************************************************************************
  * 2) Função de transcrição de áudio (salva em .mp3, chama Whisper)
@@ -25,7 +54,7 @@ export async function transcribeAudio(base64Audio: string): Promise<string> {
     const buffer = Buffer.from(base64Audio, 'base64');
     fs.writeFileSync(tempFilePath, buffer);
 
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await getOpenAI().audio.transcriptions.create({
       file: fs.createReadStream(tempFilePath),
       model: 'whisper-1'
     });
@@ -34,6 +63,12 @@ export async function transcribeAudio(base64Audio: string): Promise<string> {
     return transcription.text;
   } catch (error: any) {
     console.error('Erro ao transcrever áudio:', error.message);
+    
+    if (error.status === 401) {
+      console.error('Erro de autenticação com a OpenAI. Tentando atualizar cliente...');
+      await refreshOpenAIClient();
+    }
+    
     return '[áudio não compreendido]';
   }
 }
@@ -51,7 +86,7 @@ async function processImageWithVision(media: any): Promise<ProcessResult> {
   const mime = media.mimetype || '';
   const dataUrl = `data:${mime};base64,${media.data}`;
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
@@ -72,6 +107,12 @@ async function processImageWithVision(media: any): Promise<ProcessResult> {
     };
   } catch (error) {
     console.error("Erro ao analisar imagem com OpenAI:", error);
+    
+    if (error.status === 401) {
+      console.error('Erro de autenticação com a OpenAI. Tentando atualizar cliente...');
+      await refreshOpenAIClient();
+    }
+    
     return { recognizedText: false, text: "[erro ao analisar a imagem com OpenAI]", labels: [] };
   }
 }
@@ -128,9 +169,12 @@ export async function findOrCreateThread(identifier: string, meta?: any): Promis
     console.log('Thread encontrada no banco e adicionada ao cache:', existing.openai_thread_id);
     return existing;
   }
-  const openaiThread = await openai.beta.threads.create({
+  
+  // Cria thread na OpenAI usando o cliente atualizado
+  const openaiThread = await getOpenAI().beta.threads.create({
     metadata: { identifier, medium: 'whatsapp', ...meta }
   });
+  
   const newThread = await createThreadInDB({
     identifier,
     openai_thread_id: openaiThread.id,
@@ -150,43 +194,94 @@ export async function assistantResponse(
   tools: any[] = [],
   callback?: (run: any) => Promise<any>
 ): Promise<string> {
-  const runs = await openai.beta.threads.runs.list(threadId);
-  if (runs?.data?.length > 0) {
-    const lastRun = runs.data[runs.data.length - 1];
-    if (lastRun.status === 'in_progress' || lastRun.status === 'queued') {
-      console.log('Aguardando run anterior finalizar:', lastRun.id, lastRun.status, threadId);
+  try {
+    // Obtem a instância atualizada da OpenAI
+    const client = getOpenAI();
+    
+    // Registra detalhes da requisição para debug
+    console.log(`Enviando mensagem para thread ${threadId}`);
+    console.log(`Usando assistantId: ${config.assistantId}`);
+    
+    // Verifica se há runs em andamento
+    const runs = await client.beta.threads.runs.list(threadId);
+    if (runs?.data?.length > 0) {
+      const lastRun = runs.data[runs.data.length - 1];
+      if (lastRun.status === 'in_progress' || lastRun.status === 'queued') {
+        console.log('Aguardando run anterior finalizar:', lastRun.id, lastRun.status, threadId);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return assistantResponse(threadId, prompt, tools, callback);
+      }
+    }
+    
+    // Adiciona mensagem ao thread
+    await client.beta.threads.messages.create(threadId, { role: 'user', content: prompt });
+    
+    // Cria um novo run
+    const run = await client.beta.threads.runs.create(threadId, {
+      tools: [],
+      tool_choice: 'none',
+      assistant_id: config.assistantId || '',
+    });
+    
+    // Acompanha o status do run
+    let currentRun = await client.beta.threads.runs.retrieve(threadId, run.id);
+    let retryCount = 0;
+    
+    while (['queued', 'in_progress', 'requires_action'].includes(currentRun.status)) {
+      if (currentRun.status === 'requires_action' && callback) {
+        const outputs = await callback(currentRun);
+        await client.beta.threads.runs.submitToolOutputs(threadId, run.id, {
+          tool_outputs: outputs?.map((o: any) => ({
+            tool_call_id: o.id,
+            output: JSON.stringify(o.output)
+          })) || []
+        });
+      }
+      
       await new Promise((resolve) => setTimeout(resolve, 500));
-      return assistantResponse(threadId, prompt, tools, callback);
+      
+      try {
+        currentRun = await client.beta.threads.runs.retrieve(threadId, run.id);
+      } catch (error) {
+        console.error('Erro ao recuperar status do run:', error);
+        retryCount++;
+        
+        if (retryCount > 5) {
+          throw new Error('Número máximo de tentativas excedido');
+        }
+        
+        // Se for erro de autenticação, tenta atualizar o cliente
+        if (error.status === 401) {
+          console.error('Erro de autenticação com a OpenAI. Tentando atualizar cliente...');
+          await refreshOpenAIClient();
+        }
+        
+        await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)); // Backoff exponencial
+      }
     }
-  }
-  await openai.beta.threads.messages.create(threadId, { role: 'user', content: prompt });
-  const run = await openai.beta.threads.runs.create(threadId, {
-    tools: [],
-    tool_choice: 'none',
-    assistant_id: config.assistantId || '',
-  });
-  let currentRun = await openai.beta.threads.runs.retrieve(threadId, run.id);
-  while (['queued', 'in_progress', 'requires_action'].includes(currentRun.status)) {
-    if (currentRun.status === 'requires_action' && callback) {
-      const outputs = await callback(currentRun);
-      await openai.beta.threads.runs.submitToolOutputs(threadId, run.id, {
-        tool_outputs: outputs?.map((o: any) => ({
-          tool_call_id: o.id,
-          output: JSON.stringify(o.output)
-        })) || []
-      });
+    
+    // Recupera as mensagens do thread
+    const messages = await client.beta.threads.messages.list(threadId);
+    const lastAssistantMsg = messages.data
+      .filter((m: any) => m.run_id === run.id && m.role === 'assistant')
+      .pop();
+    
+    if (lastAssistantMsg && lastAssistantMsg.content && lastAssistantMsg.content[0]?.text?.value) {
+      return lastAssistantMsg.content[0].text.value;
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    currentRun = await openai.beta.threads.runs.retrieve(threadId, run.id);
+    
+    return 'Não foi possível obter a resposta do assistente.';
+  } catch (error) {
+    console.error('Erro em assistantResponse:', error);
+    
+    // Se for erro de autenticação, tenta atualizar o cliente
+    if (error.status === 401) {
+      console.error('Erro de autenticação com a OpenAI. Tentando atualizar cliente...');
+      await refreshOpenAIClient();
+    }
+    
+    return `Ocorreu um erro ao processar sua solicitação: ${error.message || 'Erro desconhecido'}`;
   }
-  const messages = await openai.beta.threads.messages.list(threadId);
-  const lastAssistantMsg = messages.data
-    .filter((m: any) => m.run_id === run.id && m.role === 'assistant')
-    .pop();
-  if (lastAssistantMsg && lastAssistantMsg.content && lastAssistantMsg.content[0]?.text?.value) {
-    return lastAssistantMsg.content[0].text.value;
-  }
-  return 'Não foi possível obter a resposta do assistente.';
 }
 
 /******************************************************************************
@@ -222,7 +317,7 @@ interface Aggregator {
   chat: Chat;
 }
 const messageAggregators: Map<string, Aggregator> = new Map();
-const DEBOUNCE_DELAY = 3000; // 5 segundos
+const DEBOUNCE_DELAY = 3000; // 3 segundos
 
 async function processAggregatedMessage(sender: string, aggregator: Aggregator) {
   try {
@@ -242,6 +337,12 @@ async function processAggregatedMessage(sender: string, aggregator: Aggregator) 
     console.log('Resposta agregada enviada ao usuário.');
   } catch (error) {
     console.error("Erro ao processar mensagem agregada:", error);
+    try {
+      // Tenta enviar mensagem de erro para o usuário
+      await aggregator.chat.sendMessage("Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde.");
+    } catch (sendError) {
+      console.error("Erro ao enviar mensagem de erro:", sendError);
+    }
   }
 }
 
@@ -289,6 +390,21 @@ export const start = async () => {
   client.on('ready', async () => {
     console.log('Cliente WhatsApp pronto.');
     console.log('✅ Bot pronto para receber mensagens!');
+    
+    // Verifica a configuração da OpenAI após inicialização
+    try {
+      console.log('Verificando configuração da OpenAI...');
+      console.log(`Usando chave: ${config.openAIAPIKey.substring(0, 5)}...`);
+      console.log(`ID do Assistente: ${config.assistantId}`);
+      
+      // Testa a conexão com a OpenAI
+      const modelsResponse = await getOpenAI().models.list();
+      console.log('✅ Conexão com OpenAI testada com sucesso!');
+      console.log(`Modelos disponíveis: ${modelsResponse.data.slice(0, 3).map(m => m.id).join(', ')}...`);
+    } catch (error) {
+      console.error('❌ Erro ao verificar configuração da OpenAI:', error);
+      console.error('Por favor, verifique a chave da API e o ID do assistente.');
+    }
   });
   
   client.on('message', async (message: Message) => {

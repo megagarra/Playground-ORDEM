@@ -1,8 +1,10 @@
 import express from 'express';
 import { start, qrEmitter, findOrCreateThread } from './whatsAppBot';
 import { Thread } from './database';
-import config from './config';
+import { config, initializeConfig } from './config';
+import configRoutes from './routes/configRoutes';
 import qrcode from 'qrcode';
+import path from 'path';
 
 const app = express();
 app.use(express.json());
@@ -18,8 +20,17 @@ qrEmitter.on('qr', (qr) => {
     console.log('QR Code atualizado.');
 });
 
+// Middleware para logging de requisições
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    next();
+});
+
+// Adiciona rotas de configuração
+app.use('/api/config', configRoutes);
+
 // Rota principal
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
     return res.status(200).json({ message: `${config.botName} The AI Companion` });
 });
 
@@ -88,10 +99,28 @@ app.get('/conversation/:id/status', async (req, res) => {
     }
 });
 
-// Iniciar o servidor Express
-app.listen(PORT, () => {
-    console.log(`Servidor Express ouvindo na porta ${PORT}`);
-});
+// Inicialização da aplicação
+async function startApplication() {
+    try {
+        // Inicializar as configurações do banco de dados
+        console.log('Inicializando configurações...');
+        await initializeConfig();
+        
+        // Iniciar o servidor Express
+        app.listen(PORT, () => {
+            console.log(`Servidor Express ouvindo na porta ${PORT}`);
+        });
+        
+        // Iniciar o bot do WhatsApp
+        console.log('Iniciando bot do WhatsApp...');
+        start();
+        
+        console.log('Aplicação iniciada com sucesso!');
+    } catch (error) {
+        console.error('Erro ao iniciar a aplicação:', error);
+        process.exit(1);
+    }
+}
 
-// Iniciar o bot do WhatsApp
-start();
+// Iniciar a aplicação
+startApplication();

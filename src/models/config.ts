@@ -1,7 +1,8 @@
 // src/config.ts
+
 import process from 'process';
 import dotenv from 'dotenv';
-import { getConfigCached, refreshConfigCache } from './database';
+import { getConfig, getAllConfigs, Config } from '../database';
 
 // Carrega as variáveis de ambiente do arquivo .env (como fallback)
 dotenv.config();
@@ -16,14 +17,16 @@ interface ConfigObject {
   [key: string]: string;
 }
 
-// Objeto de configuração inicial (será preenchido pelo banco)
-let configObject: ConfigObject = {
+// Cache em memória para configurações
+let configCache: ConfigObject = {
   whatsAppNumber: process.env.WHATSAPP_NUMBER || '',
   openAIAPIKey: process.env.OPENAI_API_KEY || '',
   API_BASE_URL: process.env.API_BASE_URL || '',
   assistantId: process.env.ASSISTANT_ID || '',
   botName: process.env.BOT_NAME || 'Garra'
 };
+
+let cacheInitialized = false;
 
 // Mapeamento entre nomes de variáveis do banco e campos do objeto de configuração
 const configMapping: Record<string, keyof ConfigObject> = {
@@ -37,32 +40,40 @@ const configMapping: Record<string, keyof ConfigObject> = {
 // Inicializa as configurações do banco de dados
 export async function initializeConfig(): Promise<ConfigObject> {
   try {
-    console.log('Inicializando configurações do banco de dados...');
+    console.log('Carregando configurações do banco de dados...');
+    
+    // Carrega todas as configurações do banco para o cache
+    const dbConfigs = await getAllConfigs();
+    
+    console.log('Configurações obtidas do banco:', Object.keys(dbConfigs).join(', '));
     
     // Atualiza o cache com as configurações do banco
-    const dbConfigs = await refreshConfigCache();
-    
-    // Atualiza o objeto de configuração com os valores do banco
     for (const [key, value] of Object.entries(dbConfigs)) {
       const mappedField = configMapping[key];
       
       if (mappedField) {
-        configObject[mappedField] = value;
+        // Se a chave existe no mapeamento, use-a para atualizar o campo específico
+        configCache[mappedField] = value;
         console.log(`✅ Configuração carregada: ${key} -> ${mappedField}`);
+      } else {
+        // Adiciona ao cache de qualquer forma
+        configCache[key.toLowerCase()] = value;
       }
     }
     
     // Log de configurações críticas (com mascaramento)
-    console.log(`✅ API Key da OpenAI: ${maskSensitiveValue(configObject.openAIAPIKey)}`);
-    console.log(`✅ ID do Assistente: ${configObject.assistantId}`);
-    console.log(`✅ Nome do Bot: ${configObject.botName}`);
+    console.log(`✅ API Key da OpenAI: ${maskSensitiveValue(configCache.openAIAPIKey)}`);
+    console.log(`✅ ID do Assistente: ${configCache.assistantId}`);
+    console.log(`✅ Nome do Bot: ${configCache.botName}`);
+    
+    cacheInitialized = true;
     
     // Validação das variáveis obrigatórias
     const requiredFields = ['openAIAPIKey', 'assistantId'];
     let hasMissingVars = false;
     
     for (const field of requiredFields) {
-      if (!configObject[field]) {
+      if (!configCache[field]) {
         console.error(`Erro: A configuração ${field} não está definida ou está vazia.`);
         hasMissingVars = true;
       }
@@ -72,16 +83,23 @@ export async function initializeConfig(): Promise<ConfigObject> {
       console.error('⚠️ ATENÇÃO: Configurações obrigatórias ausentes. O sistema pode não funcionar corretamente.');
     }
     
-    return configObject;
+    return configCache;
   } catch (error) {
     console.error('Erro ao inicializar configurações:', error);
     console.log('⚠️ Usando configurações do arquivo .env como fallback.');
-    return configObject;
+    cacheInitialized = true; // Evitar tentativas repetidas de inicialização
+    return configCache;
   }
 }
 
-// Método para atualizar o objeto de configuração
+// Função para obter o objeto de config atual
+export function getConfigObj(): ConfigObject {
+  return configCache;
+}
+
+// Método para atualizar o cache de configuração
 export async function refreshConfig(): Promise<ConfigObject> {
+  console.log('Atualizando configurações do banco...');
   return await initializeConfig();
 }
 
@@ -96,8 +114,8 @@ function maskSensitiveValue(value: string): string {
 export const config = new Proxy({} as ConfigObject, {
   get: (_target, prop) => {
     // Se a prop existe no objeto de configuração, retorna seu valor
-    if (typeof prop === 'string' && prop in configObject) {
-      return configObject[prop];
+    if (typeof prop === 'string' && prop in configCache) {
+      return configCache[prop];
     }
     
     // Caso contrário, retorna undefined
