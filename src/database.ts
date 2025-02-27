@@ -4,9 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Substitua pela sua URL ou use .env (DATABASE_URL=...):
-const DB_URL =
-  process.env.DATABASE_URL ||
-  '';
+const DB_URL = process.env.DATABASE_URL || '';
 
 // Cria a conexão usando a Connection String completa
 export const db = new Sequelize(DB_URL, {
@@ -18,12 +16,23 @@ export const db = new Sequelize(DB_URL, {
     },
   },
   pool: {
-    max: 5,
-    min: 0,
+    max: 10,       // Aumentar o número máximo de conexões
+    min: 2,        // Manter pelo menos 2 conexões ativas
     acquire: 30000,
     idle: 10000
   },
-  logging: false // Disable logging in production
+  logging: false, // Disable logging in production
+  
+  // Adicionar configurações de performance
+  define: {
+    timestamps: true,
+    underscored: true
+  },
+  
+  // Melhorar a eficiência das queries
+  query: {
+    raw: false // Manter como false para ter acesso aos métodos do modelo
+  }
 });
 
 /******************************************************************************
@@ -73,7 +82,19 @@ export const Thread = db.define<IThreadModel>('thread', {
   }
 }, {
   tableName: 'threads',
-  timestamps: true
+  timestamps: true,
+  // Adiciona configurações de otimização
+  indexes: [
+    {
+      name: 'idx_threads_identifier',
+      unique: true,
+      fields: ['identifier']
+    },
+    {
+      name: 'idx_threads_paused',
+      fields: ['paused']
+    }
+  ]
 });
 
 /******************************************************************************
@@ -116,7 +137,32 @@ export const ThreadMessage = db.define<IThreadMessageModel>('thread_message', {
   }
 }, {
   tableName: 'thread_messages',
-  timestamps: true
+  timestamps: true,
+  // Adiciona configurações de otimização
+  indexes: [
+    {
+      name: 'idx_thread_messages_thread_id',
+      fields: ['thread_id']
+    },
+    {
+      name: 'idx_thread_messages_role',
+      fields: ['role']
+    },
+    {
+      name: 'idx_thread_messages_createdat',
+      fields: ['createdat']
+    }
+  ]
+});
+
+// Estabelece a associação entre Thread e ThreadMessage
+Thread.hasMany(ThreadMessage, { 
+  foreignKey: 'thread_id',
+  as: 'messages'
+});
+ThreadMessage.belongsTo(Thread, {
+  foreignKey: 'thread_id',
+  as: 'thread'
 });
 
 /******************************************************************************
@@ -160,7 +206,15 @@ export const Config = db.define<IConfigModel>('config', {
   }
 }, {
   tableName: 'configs',
-  timestamps: true
+  timestamps: true,
+  // Adiciona configurações de otimização
+  indexes: [
+    {
+      name: 'idx_configs_key',
+      unique: true,
+      fields: ['key']
+    }
+  ]
 });
 
 // Métodos para gerenciar configurações
@@ -242,13 +296,49 @@ export async function initializeDefaultConfigs(defaults: Record<string, { value:
   }
 }
 
+// Adicionar índices para melhorar a performance das consultas frequentes
+async function addOptimizationIndexes() {
+  try {
+    // Índice para busca rápida por identificador
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_threads_identifier_search ON threads (identifier varchar_pattern_ops);
+    `);
+    
+    // Índice para busca por texto nas mensagens
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_thread_messages_content_search ON thread_messages USING gin (to_tsvector('portuguese', content));
+    `);
+    
+    // Índice para otimizar ordenação por data
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_threads_createdat ON threads (createdat DESC);
+    `);
+    
+    console.log('✅ Índices de otimização criados/verificados com sucesso.');
+  } catch (error) {
+    console.error('❌ Erro ao criar índices de otimização:', error);
+  }
+}
+
 /******************************************************************************
  * Inicializa
  *****************************************************************************/
 async function initializeDatabase() {
   try {
-    await db.authenticate();
-    console.log('✅ Conectado ao banco de dados.');
+    // Tenta conectar com retry
+    let retries = 5;
+    while (retries > 0) {
+      try {
+        await db.authenticate();
+        console.log('✅ Conectado ao banco de dados.');
+        break;
+      } catch (error) {
+        retries--;
+        if (retries === 0) throw error;
+        console.log(`Falha na conexão, tentando novamente. Tentativas restantes: ${retries}`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // espera 2s antes de tentar novamente
+      }
+    }
 
     // Cria a tabela threads se não existir (incluindo o campo "paused")
     await db.query(`
@@ -289,6 +379,9 @@ async function initializeDatabase() {
 
     console.log('✅ Tabelas verificadas/criadas com sucesso.');
     
+    // Adiciona os índices de otimização
+    await addOptimizationIndexes();
+    
     // Inicializa configurações padrão do .env se tabela estiver vazia
     const configCount = await Config.count();
     if (configCount === 0) {
@@ -311,6 +404,24 @@ async function initializeDatabase() {
   }
 }
 
+// Exporta uma função para limpar o cache de configurações
+export function clearConfigCache() {
+  configCache = {};
+  cacheInitialized = false;
+  console.log('Cache de configurações limpo.');
+}
+
+// Função para fechar a conexão com o banco
+export async function closeDatabase() {
+  try {
+    await db.close();
+    console.log('Conexão com o banco de dados fechada.');
+  } catch (error) {
+    console.error('Erro ao fechar conexão com o banco:', error);
+  }
+}
+
+// Inicializa o banco de dados automaticamente ao importar este módulo
 initializeDatabase();
 
 export default db;

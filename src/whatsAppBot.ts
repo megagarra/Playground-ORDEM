@@ -11,6 +11,7 @@ import { Thread, ThreadMessage, IThreadModel } from './database';
 
 dotenv.config();
 
+// Declaração global para acessar o cache de threads de outros módulos
 declare global {
   var threadCache: Map<string, IThreadModel>;
 }
@@ -156,8 +157,6 @@ async function processFileAttachment(media: any): Promise<ProcessResult> {
 /******************************************************************************
  * 4) Localiza ou cria Thread no "banco" e também na OpenAI, usando cache local
  *****************************************************************************/
-
-
 async function findThreadByIdentifier(identifier: string): Promise<IThreadModel | null> {
   return Thread.findOne({ where: { identifier } });
 }
@@ -165,8 +164,6 @@ async function findThreadByIdentifier(identifier: string): Promise<IThreadModel 
 async function createThreadInDB(data: { identifier: string; openai_thread_id: string; medium?: string; }): Promise<IThreadModel> {
   return Thread.create(data);
 }
-
-// Substituir a função findOrCreateThread no arquivo src/whatsAppBot.ts
 
 export async function findOrCreateThread(identifier: string, meta?: any): Promise<IThreadModel> {
   // Se estiver no cache, verificar novamente no banco para garantir dados atualizados
@@ -337,6 +334,26 @@ async function enqueueMessage(message: QueueMessage) {
   await redisClient.rPush(QUEUE_KEY, JSON.stringify(message));
 }
 
+// Função otimizada para salvar mensagem diretamente no banco
+async function saveMessageDirectly(threadId: number, role: string, content: string): Promise<void> {
+  try {
+    // Salva a mensagem diretamente no banco
+    await ThreadMessage.create({
+      thread_id: threadId,
+      role,
+      content
+    });
+    console.log(`Mensagem salva diretamente no banco para thread ${threadId}`);
+    
+    // Também enfileira para manter a compatibilidade
+    await enqueueMessage({ threadId, role, content });
+  } catch (error) {
+    console.error(`Erro ao salvar mensagem no banco para thread ${threadId}:`, error);
+    // Tenta enfileirar como fallback
+    await enqueueMessage({ threadId, role, content });
+  }
+}
+
 /******************************************************************************
  * Lógica de Debounce para agrupar mensagens de texto fragmentadas
  *****************************************************************************/
@@ -348,6 +365,7 @@ interface Aggregator {
 const messageAggregators: Map<string, Aggregator> = new Map();
 const DEBOUNCE_DELAY = 3000; // 3 segundos
 
+// Função modificada processAggregatedMessage
 async function processAggregatedMessage(sender: string, aggregator: Aggregator) {
   try {
     const dbThread = await findOrCreateThread(sender);
@@ -355,12 +373,17 @@ async function processAggregatedMessage(sender: string, aggregator: Aggregator) 
       console.log(`Conversa com ${sender} está pausada. Ignorando mensagens agregadas.`);
       return;
     }
-    // Enfileira a mensagem agregada
-    await enqueueMessage({ threadId: dbThread.id!, role: 'user', content: aggregator.aggregatedText });
+    
+    // Salva a mensagem do usuário diretamente no banco
+    await saveMessageDirectly(dbThread.id!, 'user', aggregator.aggregatedText);
+    
+    // Continua com a chamada à OpenAI
     const response = await assistantResponse(dbThread.openai_thread_id, aggregator.aggregatedText);
     console.log('Resposta do assistente (agrupada):', response);
-    // Enfileira a resposta do assistente
-    await enqueueMessage({ threadId: dbThread.id!, role: 'assistant', content: response });
+    
+    // Salva a resposta do assistente diretamente no banco
+    await saveMessageDirectly(dbThread.id!, 'assistant', response);
+    
     // Envia a resposta para o chat
     await aggregator.chat.sendMessage(response || '[sem resposta do assistant]');
     console.log('Resposta agregada enviada ao usuário.');
@@ -453,6 +476,7 @@ export const start = async () => {
         console.log('Mensagem ignorada (enviada pelo próprio bot).');
         return;
       }
+      
       // Se a mensagem tiver mídia, processa imediatamente
       if (message.hasMedia) {
         // Processa mídia (audio, imagem, etc.) de forma imediata
@@ -461,10 +485,12 @@ export const start = async () => {
           console.log(`Conversa com ${message.from} está pausada. Ignorando mensagem.`);
           return;
         }
+        
         const chat = await message.getChat();
         await chat.sendStateTyping();
         let userMessage: string;
         const media = await message.downloadMedia();
+        
         if (message.type === 'ptt' || message.type === 'audio') {
           console.log('Recebido áudio. Iniciando transcrição...');
           userMessage = await transcribeAudio(media.data);
@@ -481,11 +507,16 @@ export const start = async () => {
           userMessage = finalMessage;
           console.log('Resultado do processamento do arquivo:', userMessage);
         }
-        // Enfileira e responde imediatamente para mídia
-        await enqueueMessage({ threadId: dbThread.id!, role: 'user', content: userMessage });
+        
+        // Salva a mensagem do usuário diretamente no banco
+        await saveMessageDirectly(dbThread.id!, 'user', userMessage);
+        
         const response = await assistantResponse(dbThread.openai_thread_id, userMessage);
         console.log('Resposta do assistente:', response);
-        await enqueueMessage({ threadId: dbThread.id!, role: 'assistant', content: response });
+        
+        // Salva a resposta do assistente diretamente no banco
+        await saveMessageDirectly(dbThread.id!, 'assistant', response);
+        
         await message.reply(response || '[sem resposta do assistant]');
         console.log('Mensagem enviada ao usuário.');
         await (await message.getChat()).clearState();

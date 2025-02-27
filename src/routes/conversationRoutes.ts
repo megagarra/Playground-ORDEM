@@ -243,6 +243,9 @@ router.get('/:id/status', async (req, res) => {
 });
 
 // Adicionar uma mensagem a uma conversa (permitindo simular conversa manualmente)
+// Modificação para src/routes/conversationRoutes.ts
+
+// Adicionar uma mensagem a uma conversa (permitindo simular conversa manualmente)
 router.post('/:id/messages', async (req, res) => {
   try {
     const identifier = req.params.id;
@@ -257,19 +260,25 @@ router.post('/:id/messages', async (req, res) => {
       return res.status(400).json({ success: false, message: 'A role deve ser "user" ou "assistant".' });
     }
     
-    // Busca a thread
+    // Busca a thread diretamente no banco (bypass cache)
     const thread = await Thread.findOne({ where: { identifier } });
     if (!thread) {
       return res.status(404).json({ success: false, message: `Conversa ${identifier} não encontrada.` });
     }
     
-    // Cria a mensagem
+    // Cria a mensagem com await para garantir persistência imediata
+    console.log(`Adicionando mensagem para thread ${identifier} (${thread.id}) com role ${role}`);
+    
+    // Usar "create" e esperar pela conclusão da operação
     const message = await ThreadMessage.create({
       thread_id: thread.id as number,
       role,
       content
     });
     
+    console.log(`Mensagem ${message.id} adicionada com sucesso ao banco`);
+    
+    // Confirma que a mensagem foi salva
     res.status(201).json({
       success: true,
       message: 'Mensagem adicionada com sucesso.',
@@ -281,44 +290,43 @@ router.post('/:id/messages', async (req, res) => {
   }
 });
 
-// Excluir uma conversa
-router.delete('/:id', async (req, res) => {
+// Obter detalhes de uma conversa específica incluindo mensagens - otimizado
+router.get('/:id', async (req, res) => {
   try {
     const identifier = req.params.id;
+    console.time(`busca-conversa-${identifier}`);
     
-    const thread = await Thread.findOne({ where: { identifier } });
+    // Busca a thread no banco diretamente
+    const thread = await Thread.findOne({ 
+      where: { identifier },
+      rejectOnEmpty: false // Não lança erro se não encontrar
+    });
+    
     if (!thread) {
+      console.timeEnd(`busca-conversa-${identifier}`);
       return res.status(404).json({ success: false, message: `Conversa ${identifier} não encontrada.` });
     }
     
-    // Inicia uma transação para garantir a integridade dos dados
-    const t = await db.transaction();
+    // Busca as mensagens da thread com mais eficiência
+    const messages = await ThreadMessage.findAll({
+      where: { thread_id: thread.id },
+      order: [['createdAt', 'ASC']],
+      // Adiciona limite para melhorar performance
+      limit: 100
+    });
     
-    try {
-      // Exclui todas as mensagens da thread
-      await ThreadMessage.destroy({
-        where: { thread_id: thread.id },
-        transaction: t
-      });
-      
-      // Exclui a thread
-      await thread.destroy({ transaction: t });
-      
-      // Confirma a transação
-      await t.commit();
-      
-      res.status(200).json({
-        success: true,
-        message: `Conversa ${identifier} excluída com sucesso.`
-      });
-    } catch (error) {
-      // Reverte a transação em caso de erro
-      await t.rollback();
-      throw error;
-    }
+    console.timeEnd(`busca-conversa-${identifier}`);
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        thread,
+        messages
+      }
+    });
   } catch (error) {
-    console.error(`Erro ao excluir conversa ${req.params.id}:`, error);
-    res.status(500).json({ success: false, message: 'Erro ao excluir conversa.' });
+    console.error(`Erro ao buscar detalhes da conversa ${req.params.id}:`, error);
+    res.status(500).json({ success: false, message: 'Erro ao buscar detalhes da conversa.' });
   }
 });
 
