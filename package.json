@@ -5,18 +5,18 @@
 	"main": "src/index.ts",
 	"author": "alexandegarra",
 	"scripts": {
-
 		"prettier": "prettier --write ./src",
 		"migrate": "npx vite-node src/bin/migrate.ts",
 		"start": "NODE_OPTIONS=--openssl-legacy-provider npx vite-node src/index.ts",
-  		"worker": "NODE_OPTIONS=--openssl-legacy-provider ts-node src/worker.ts",
-  		"dev": "concurrently \"npm run start\" \"npm run worker\""
+		"worker": "NODE_OPTIONS=--openssl-legacy-provider ts-node src/worker.ts",
+		"dev": "concurrently \"npm run start\" \"npm run worker\""
 	},
 	"license": "MIT",
 	"dependencies": {
 		"@periskope/whatsapp-web.js": "^1.25.0-bk.4",
 		"axios": "^1.7.8",
 		"concurrently": "^9.1.2",
+		"cors": "^2.8.5",
 		"dotenv": "^16.3.1",
 		"elevenlabs-node": "^2.0.1",
 		"express": "^4.18.2",
