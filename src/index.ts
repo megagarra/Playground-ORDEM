@@ -3,6 +3,7 @@ import { start, qrEmitter, findOrCreateThread } from './whatsAppBot';
 import { Thread } from './database';
 import { config, initializeConfig } from './config';
 import configRoutes from './routes/configRoutes';
+import conversationRoutes from './routes/conversationRoutes';
 import qrcode from 'qrcode';
 import path from 'path';
 
@@ -26,12 +27,17 @@ app.use((req, res, next) => {
     next();
 });
 
-// Adiciona rotas de configuração
+// Adiciona rotas de API
 app.use('/api/config', configRoutes);
+app.use('/api/conversations', conversationRoutes);
 
 // Rota principal
 app.get('/', async (req, res) => {
-    return res.status(200).json({ message: `${config.botName} The AI Companion` });
+    return res.status(200).json({ 
+        message: `${config.botName} The AI Companion`,
+        version: '1.0.0',
+        status: 'online'
+    });
 });
 
 // Rota para servir o QR Code como imagem PNG
@@ -50,7 +56,7 @@ app.get('/qrcode', async (req, res) => {
     }
 });
 
-// Endpoint para pausar uma conversa (atualiza o campo "paused" no banco)
+// Endpoint para pausar uma conversa (mantido para compatibilidade)
 app.post('/conversation/:id/pause', async (req, res) => {
     try {
         const conversationId = req.params.id;
@@ -66,7 +72,7 @@ app.post('/conversation/:id/pause', async (req, res) => {
     }
 });
 
-// Endpoint para retomar uma conversa
+// Endpoint para retomar uma conversa (mantido para compatibilidade)
 app.post('/conversation/:id/resume', async (req, res) => {
     try {
         const conversationId = req.params.id;
@@ -84,7 +90,7 @@ app.post('/conversation/:id/resume', async (req, res) => {
     }
 });
 
-// Endpoint para verificar o status de uma conversa
+// Endpoint para verificar o status de uma conversa (mantido para compatibilidade)
 app.get('/conversation/:id/status', async (req, res) => {
     try {
         const conversationId = req.params.id;
@@ -97,6 +103,25 @@ app.get('/conversation/:id/status', async (req, res) => {
         console.error('Erro ao consultar status da conversa:', error);
         res.status(500).json({ message: 'Erro ao consultar status da conversa.' });
     }
+});
+
+// Middleware para capturar rotas não encontradas
+app.use((req, res) => {
+    res.status(404).json({ 
+        success: false, 
+        message: 'Rota não encontrada',
+        path: req.path
+    });
+});
+
+// Middleware para tratamento de erros
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Erro não tratado:', err);
+    res.status(500).json({ 
+        success: false, 
+        message: 'Erro interno do servidor', 
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
 });
 
 // Inicialização da aplicação
