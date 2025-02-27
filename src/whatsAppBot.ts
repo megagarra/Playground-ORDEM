@@ -11,6 +11,14 @@ import { Thread, ThreadMessage, IThreadModel } from './database';
 
 dotenv.config();
 
+declare global {
+  var threadCache: Map<string, IThreadModel>;
+}
+
+// Definir o cache como variável global
+const threadCache = new Map<string, IThreadModel>();
+global.threadCache = threadCache;
+
 /******************************************************************************
  * 1) Cria o client do OpenAI
  *****************************************************************************/
@@ -148,7 +156,7 @@ async function processFileAttachment(media: any): Promise<ProcessResult> {
 /******************************************************************************
  * 4) Localiza ou cria Thread no "banco" e também na OpenAI, usando cache local
  *****************************************************************************/
-const threadCache = new Map<string, IThreadModel>();
+
 
 async function findThreadByIdentifier(identifier: string): Promise<IThreadModel | null> {
   return Thread.findOne({ where: { identifier } });
@@ -158,11 +166,32 @@ async function createThreadInDB(data: { identifier: string; openai_thread_id: st
   return Thread.create(data);
 }
 
+// Substituir a função findOrCreateThread no arquivo src/whatsAppBot.ts
+
 export async function findOrCreateThread(identifier: string, meta?: any): Promise<IThreadModel> {
+  // Se estiver no cache, verificar novamente no banco para garantir dados atualizados
   if (threadCache.has(identifier)) {
-    console.log('Thread encontrada no cache:', threadCache.get(identifier)?.openai_thread_id);
-    return threadCache.get(identifier)!;
+    const cachedThread = threadCache.get(identifier)!;
+    
+    // Busca a versão atualizada do banco para verificar mudanças
+    const updatedThread = await findThreadByIdentifier(identifier);
+    
+    if (updatedThread) {
+      // Se houve alteração no estado de pausa, atualiza o cache
+      if (cachedThread.paused !== updatedThread.paused) {
+        console.log(`Thread ${identifier} teve status de pausa alterado para: ${updatedThread.paused}`);
+        threadCache.set(identifier, updatedThread);
+      }
+      
+      return updatedThread;
+    }
+    
+    // Se não encontrou no banco por algum motivo, usa a do cache mesmo
+    console.log('Thread encontrada no cache:', cachedThread.openai_thread_id);
+    return cachedThread;
   }
+  
+  // Se não estiver no cache, busca no banco
   const existing = await findThreadByIdentifier(identifier);
   if (existing) {
     threadCache.set(identifier, existing);

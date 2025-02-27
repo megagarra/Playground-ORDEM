@@ -110,20 +110,46 @@ router.post('/', async (req, res) => {
 });
 
 // Pausar uma conversa
+// Substituir o endpoint de pausa em src/routes/conversationRoutes.ts
+
+// Pausar uma conversa
 router.post('/:id/pause', async (req, res) => {
   try {
     const identifier = req.params.id;
+    console.log(`Solicitação para pausar conversa ${identifier}`);
     
-    // Busca ou cria a thread
-    const thread = await findOrCreateThread(identifier);
+    // Busca a thread diretamente do banco
+    let thread = await Thread.findOne({ where: { identifier } });
     
-    thread.set('paused', true);
-    await thread.save();
+    if (!thread) {
+      console.log(`Thread ${identifier} não encontrada, criando nova...`);
+      // Se não existir, cria uma nova usando findOrCreateThread
+      thread = await findOrCreateThread(identifier);
+    }
+    
+    console.log(`Estado atual da thread ${identifier}: paused=${thread.paused}`);
+    
+    // Atualiza diretamente usando o método update do Sequelize
+    const [updated] = await Thread.update(
+      { paused: true },
+      { where: { id: thread.id } }
+    );
+    
+    console.log(`Resultado da atualização: ${updated} registro(s) afetado(s)`);
+    
+    // Força atualização do objeto thread com os novos valores
+    thread = await Thread.findByPk(thread.id);
+    
+    // Limpa o cache de threads para garantir que a próxima consulta pegue valores atualizados
+    if (global.threadCache && global.threadCache.delete) {
+      global.threadCache.delete(identifier);
+      console.log(`Thread ${identifier} removida do cache`);
+    }
     
     res.status(200).json({
       success: true,
       message: `Conversa ${identifier} foi pausada.`,
-      data: { paused: true }
+      data: { paused: thread.paused }
     });
   } catch (error) {
     console.error(`Erro ao pausar conversa ${req.params.id}:`, error);
@@ -131,23 +157,45 @@ router.post('/:id/pause', async (req, res) => {
   }
 });
 
-// Retomar uma conversa
+// Endpoint similar para retomar conversa
 router.post('/:id/resume', async (req, res) => {
   try {
     const identifier = req.params.id;
+    console.log(`Solicitação para retomar conversa ${identifier}`);
     
-    const thread = await Thread.findOne({ where: { identifier } });
+    // Busca a thread diretamente do banco
+    let thread = await Thread.findOne({ where: { identifier } });
+    
     if (!thread) {
-      return res.status(404).json({ success: false, message: `Conversa ${identifier} não encontrada.` });
+      return res.status(404).json({ 
+        success: false, 
+        message: `Conversa ${identifier} não encontrada.` 
+      });
     }
     
-    thread.set('paused', false);
-    await thread.save();
+    console.log(`Estado atual da thread ${identifier}: paused=${thread.paused}`);
+    
+    // Atualiza diretamente usando o método update do Sequelize
+    const [updated] = await Thread.update(
+      { paused: false },
+      { where: { id: thread.id } }
+    );
+    
+    console.log(`Resultado da atualização: ${updated} registro(s) afetado(s)`);
+    
+    // Força atualização do objeto thread com os novos valores
+    thread = await Thread.findByPk(thread.id);
+    
+    // Limpa o cache de threads para garantir que a próxima consulta pegue valores atualizados
+    if (global.threadCache && global.threadCache.delete) {
+      global.threadCache.delete(identifier);
+      console.log(`Thread ${identifier} removida do cache`);
+    }
     
     res.status(200).json({
       success: true,
       message: `Conversa ${identifier} foi retomada.`,
-      data: { paused: false }
+      data: { paused: thread.paused }
     });
   } catch (error) {
     console.error(`Erro ao retomar conversa ${req.params.id}:`, error);
@@ -160,10 +208,20 @@ router.get('/:id/status', async (req, res) => {
   try {
     const identifier = req.params.id;
     
-    const thread = await Thread.findOne({ where: { identifier } });
+    // Força busca direta no banco de dados, ignorando cache
+    const thread = await Thread.findOne({ 
+      where: { identifier },
+      rejectOnEmpty: false  // Não lança erro se não encontrar
+    });
+    
     if (!thread) {
-      return res.status(404).json({ success: false, message: `Conversa ${identifier} não encontrada.` });
+      return res.status(404).json({ 
+        success: false, 
+        message: `Conversa ${identifier} não encontrada.` 
+      });
     }
+    
+    console.log(`Status atual da conversa ${identifier}: paused=${thread.paused}`);
     
     res.status(200).json({
       success: true,
@@ -177,7 +235,10 @@ router.get('/:id/status', async (req, res) => {
     });
   } catch (error) {
     console.error(`Erro ao consultar status da conversa ${req.params.id}:`, error);
-    res.status(500).json({ success: false, message: 'Erro ao consultar status da conversa.' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao consultar status da conversa.' 
+    });
   }
 });
 
