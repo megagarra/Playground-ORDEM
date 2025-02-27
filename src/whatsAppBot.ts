@@ -470,24 +470,33 @@ export const start = async () => {
     }
   });
   
-  client.on('message', async (message: Message) => {
-    try {
-      if (message.fromMe) {
-        console.log('Mensagem ignorada (enviada pelo próprio bot).');
-        return;
-      }
-      
-      // Se a mensagem tiver mídia, processa imediatamente
-      if (message.hasMedia) {
+// Esta é a correção específica para o manipulador de mensagens no whatsAppBot.ts
+
+client.on('message', async (message: Message) => {
+  try {
+    if (message.fromMe) {
+      console.log('Mensagem ignorada (enviada pelo próprio bot).');
+      return;
+    }
+    
+    // Se a mensagem tiver mídia, processa imediatamente
+    if (message.hasMedia) {
+      try {
         // Processa mídia (audio, imagem, etc.) de forma imediata
         const dbThread = await findOrCreateThread(message.from);
+        
+        // Verifica se a conversa está pausada
+        console.log(`Verificando status de pausa para ${message.from}: ${dbThread.paused}`);
         if (dbThread.paused) {
           console.log(`Conversa com ${message.from} está pausada. Ignorando mensagem.`);
           return;
         }
         
+        // Indicador de digitação para melhor experiência do usuário
         const chat = await message.getChat();
         await chat.sendStateTyping();
+        
+        // Processa diferentes tipos de mídia
         let userMessage: string;
         const media = await message.downloadMedia();
         
@@ -508,42 +517,67 @@ export const start = async () => {
           console.log('Resultado do processamento do arquivo:', userMessage);
         }
         
-        // Salva a mensagem do usuário diretamente no banco
+        // Salva a mensagem do usuário diretamente no banco e na fila
+        console.log(`Salvando mensagem de mídia para thread ${dbThread.id}`);
         await saveMessageDirectly(dbThread.id!, 'user', userMessage);
         
+        // Obtém resposta do assistente
+        console.log(`Enviando para o assistente, thread ${dbThread.openai_thread_id}`);
         const response = await assistantResponse(dbThread.openai_thread_id, userMessage);
         console.log('Resposta do assistente:', response);
         
-        // Salva a resposta do assistente diretamente no banco
+        // Salva a resposta do assistente diretamente no banco e na fila
         await saveMessageDirectly(dbThread.id!, 'assistant', response);
         
+        // Envia a resposta para o usuário
+        console.log('Enviando resposta ao usuário');
         await message.reply(response || '[sem resposta do assistant]');
         console.log('Mensagem enviada ao usuário.');
-        await (await message.getChat()).clearState();
-        return;
+        
+        // Limpa o estado de digitação
+        await chat.clearState();
+      } catch (error) {
+        console.error('Erro ao processar mensagem de mídia:', error);
+        await message.reply('❌ Ocorreu um erro ao processar sua mídia. Tente novamente mais tarde.');
       }
-      
-      // Para mensagens de texto, implementa a lógica de debounce
+      return;
+    }
+    
+    // Para mensagens de texto, implementa a lógica de debounce
+    try {
       const sender = message.from;
       const chat = await message.getChat();
       const text = message.body.trim();
       if (!text) return;
       
+      // Verifica se a thread está pausada antes de agregar
+      const dbThread = await findOrCreateThread(sender);
+      if (dbThread.paused) {
+        console.log(`Conversa com ${sender} está pausada. Ignorando mensagem de texto.`);
+        return;
+      }
+      
+      console.log(`Processando mensagem de texto de ${sender}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+      
       if (messageAggregators.has(sender)) {
         // Se já existe um agregador para esse remetente, acumula o texto e reinicia o timer
+        console.log(`Agregando à mensagem existente para ${sender}`);
         const aggregator = messageAggregators.get(sender)!;
         aggregator.aggregatedText += " " + text;
         clearTimeout(aggregator.timer);
         aggregator.timer = setTimeout(() => {
+          console.log(`Timer expirado para ${sender}, processando mensagem agregada`);
           processAggregatedMessage(sender, aggregator);
           messageAggregators.delete(sender);
         }, DEBOUNCE_DELAY);
       } else {
         // Cria um novo agregador para esse remetente
+        console.log(`Criando novo agregador para ${sender}`);
         const aggregator: Aggregator = {
           aggregatedText: text,
           chat,
           timer: setTimeout(() => {
+            console.log(`Timer expirado para ${sender}, processando mensagem agregada`);
             processAggregatedMessage(sender, aggregator);
             messageAggregators.delete(sender);
           }, DEBOUNCE_DELAY)
@@ -551,12 +585,24 @@ export const start = async () => {
         messageAggregators.set(sender, aggregator);
       }
     } catch (error) {
-      console.error('Erro ao processar a mensagem:', error);
+      console.error('Erro ao processar mensagem de texto:', error);
+      try {
+        await message.reply('❌ Ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.');
+      } catch (replyError) {
+        console.error('Erro ao enviar mensagem de erro:', replyError);
+      }
+    }
+  } catch (error) {
+    console.error('Erro global no processamento de mensagem:', error);
+    try {
       const chat = await message.getChat();
       await chat.clearState();
-      await message.reply('❌ Ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.');
+      await message.reply('❌ Ocorreu um erro no sistema. Por favor, tente novamente mais tarde.');
+    } catch (finalError) {
+      console.error('Erro fatal ao responder ao usuário:', finalError);
     }
-  });
+  }
+});
   
   client.initialize();
 };
