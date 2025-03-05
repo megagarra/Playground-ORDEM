@@ -8,6 +8,7 @@ import fs from 'fs';
 import OpenAI from 'openai';
 import { config, refreshConfig } from './config';
 import { Thread, ThreadMessage, IThreadModel } from './database';
+import { ExternalApiService } from './services/externalApi';
 
 dotenv.config();
 
@@ -214,6 +215,14 @@ export async function findOrCreateThread(identifier: string, meta?: any): Promis
 /******************************************************************************
  * 5) assistantResponse: envia prompt ao Thread, cria 'run' e faz polling
  *****************************************************************************/
+/**
+ * Obtém uma resposta do assistente da OpenAI
+ * @param threadId ID do thread no assistente da OpenAI
+ * @param prompt Mensagem a ser enviada para o assistente
+ * @param tools Ferramentas disponíveis (definidas pelo Playground da OpenAI)
+ * @param callback Callback opcional a ser chamado quando o run estiver pronto
+ * @returns Resposta do assistente
+ */
 export async function assistantResponse(
   threadId: string,
   prompt: string,
@@ -221,47 +230,103 @@ export async function assistantResponse(
   callback?: (run: any) => Promise<any>
 ): Promise<string> {
   try {
-    // Obtem a instância atualizada da OpenAI
     const client = getOpenAI();
     
-    // Registra detalhes da requisição para debug
-    console.log(`Enviando mensagem para thread ${threadId}`);
-    console.log(`Usando assistantId: ${config.assistantId}`);
-    
-    // Verifica se há runs em andamento
+    // Check for active runs and cancel them if necessary
     const runs = await client.beta.threads.runs.list(threadId);
     if (runs?.data?.length > 0) {
-      const lastRun = runs.data[runs.data.length - 1];
-      if (lastRun.status === 'in_progress' || lastRun.status === 'queued') {
-        console.log('Aguardando run anterior finalizar:', lastRun.id, lastRun.status, threadId);
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return assistantResponse(threadId, prompt, tools, callback);
+      const activeRun = runs.data[0];
+      if (['in_progress', 'queued', 'requires_action'].includes(activeRun.status)) {
+        console.log(`[DEBUG] ⚠️ Canceling active run: ${activeRun.id}`);
+        await client.beta.threads.runs.cancel(threadId, activeRun.id);
+        // Wait a moment for the cancellation to take effect
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
+
+    console.log(`[DEBUG] 📋 DETALHADO - assistantResponse - Iniciando com threadId: ${threadId}`);
+    console.log(`[DEBUG] 📋 DETALHADO - assistantResponse - Prompt recebido: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
+    
+    // Log das ferramentas disponíveis
+    if (tools && tools.length > 0) {
+      console.log(`[DEBUG] 🔧 assistantResponse - ${tools.length} ferramenta(s) recebida(s):`);
+      tools.forEach((tool, index) => {
+        if (tool.type === 'function' && tool.function?.name) {
+          console.log(`[DEBUG]   - [${index + 1}/${tools.length}] ${tool.type}: ${tool.function.name}`);
+        } else {
+          console.log(`[DEBUG]   - [${index + 1}/${tools.length}] ${tool.type || 'Desconhecido'}`);
+        }
+      });
+    } else {
+      console.log(`[DEBUG] ⚠️ assistantResponse - Nenhuma ferramenta recebida - o assistente usará as ferramentas configuradas no Playground da OpenAI`);
+    }
+    
+    console.log(`[DEBUG] 📋 DETALHADO - assistantResponse - Callback fornecido:`, callback ? "SIM" : "NÃO");
+
+    // Registra detalhes da requisição para debug
+    console.log(`[DEBUG] 🔄 assistantResponse - Thread ID: ${threadId}`);
+    console.log(`[DEBUG] 🔄 assistantResponse - Prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
+    console.log(`Enviando mensagem para thread ${threadId}`);
+    console.log(`[DEBUG] 🤖 assistantResponse - Assistant ID: ${config.assistantId}`);
+    console.log(`Usando assistantId: ${config.assistantId}`);
     
     // Adiciona mensagem ao thread
+    console.log('[DEBUG] 📝 assistantResponse - Adicionando mensagem ao thread');
     await client.beta.threads.messages.create(threadId, { role: 'user', content: prompt });
     
-    // Cria um novo run
-    const run = await client.beta.threads.runs.create(threadId, {
-      tools: [],
-      tool_choice: 'none',
+    // Configura as ferramentas disponíveis
+    // Se nenhuma ferramenta for fornecida, usará as configuradas no Playground da OpenAI
+    const runConfig: any = {
       assistant_id: config.assistantId || '',
-    });
+    };
+    
+    // Adiciona ferramentas apenas se foram explicitamente fornecidas
+    if (tools && tools.length > 0) {
+      console.log(`[DEBUG] 🔧 assistantResponse - Usando ${tools.length} ferramentas fornecidas`);
+      runConfig.tools = tools;
+      runConfig.tool_choice = "auto";
+    } else {
+      console.log(`[DEBUG] ℹ️ assistantResponse - Nenhuma ferramenta local fornecida, usando as do Playground OpenAI`);
+    }
+    
+    // Cria um novo run com as configurações
+    console.log('[DEBUG] 🚀 assistantResponse - Criando um novo run');
+    const run = await client.beta.threads.runs.create(threadId, runConfig);
+    
+    console.log(`[DEBUG] 🆔 assistantResponse - Run criado com ID: ${run.id}`);
     
     // Acompanha o status do run
     let currentRun = await client.beta.threads.runs.retrieve(threadId, run.id);
     let retryCount = 0;
     
+    console.log(`[DEBUG] 🔄 assistantResponse - Acompanhando run, status inicial: ${currentRun.status}`);
+    
     while (['queued', 'in_progress', 'requires_action'].includes(currentRun.status)) {
       if (currentRun.status === 'requires_action' && callback) {
+        console.log(`[DEBUG] 🔔 assistantResponse - Run requer ação: ${currentRun.status}`);
+        console.log('🔔 Assistente requer ação - executando callback...');
         const outputs = await callback(currentRun);
-        await client.beta.threads.runs.submitToolOutputs(threadId, run.id, {
-          tool_outputs: outputs?.map((o: any) => ({
-            tool_call_id: o.id,
-            output: JSON.stringify(o.output)
-          })) || []
-        });
+        
+        if (outputs?.length > 0) {
+          console.log(`[DEBUG] 🔨 assistantResponse - Enviando ${outputs.length} saídas de ferramentas`);
+          console.log(`[DEBUG] 🔧 Tool outputs:`, JSON.stringify(outputs, null, 2));
+          
+          const toolOutputs = outputs.map((o: any) => ({
+            tool_call_id: o.tool_call_id,
+            output: typeof o.output === 'string' ? o.output : JSON.stringify(o.output)
+          }));
+          
+          await client.beta.threads.runs.submitToolOutputs(threadId, run.id, {
+            tool_outputs: toolOutputs
+          });
+        } else {
+          console.warn('[DEBUG] ⚠️ assistantResponse - Callback não retornou saídas');
+          console.warn('⚠️ Callback não retornou nenhuma saída de ferramenta');
+          // Submete um array vazio para evitar que o run fique preso
+          await client.beta.threads.runs.submitToolOutputs(threadId, run.id, {
+            tool_outputs: []
+          });
+        }
       }
       
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -365,7 +430,148 @@ interface Aggregator {
 const messageAggregators: Map<string, Aggregator> = new Map();
 const DEBOUNCE_DELAY = 3000; // 3 segundos
 
-// Função modificada processAggregatedMessage
+/**
+ * Processa as chamadas de ferramentas do assistente
+ * @param run O objeto run do OpenAI com as ferramentas a serem processadas
+ * @returns Array de resultados das ferramentas
+ */
+async function processFunctionCalls(run: any): Promise<any[]> {
+  const results: any[] = [];
+
+  if (run.status !== 'requires_action' || run.required_action?.type !== 'submit_tool_outputs') {
+    return results;
+  }
+
+  const toolCalls = run.required_action.submit_tool_outputs.tool_calls;
+  
+  for (const toolCall of toolCalls) {
+    const functionName = toolCall.function.name;
+    const toolCallId = toolCall.id;
+
+    try {
+      // Analisa os argumentos da função (que vêm como string JSON)
+      let args = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || '{}');
+        console.log(`[DEBUG] 📤 Argumentos da função ${functionName} (parsed):`, JSON.stringify(args, null, 2));
+        console.log(`[DEBUG] 📋 DETALHADO - Analisando argumentos para função ${functionName}:`);
+        console.log(`[DEBUG]   - Argumentos recebidos: ${toolCall.function.arguments}`);
+        
+        // Verificação específica para campos com terminação "ada" vs "ado"
+        const fieldNames = Object.keys(args);
+        for (const fieldName of fieldNames) {
+          if (fieldName.endsWith('ada')) {
+            const correctFieldName = fieldName.replace(/ada$/, 'ado');
+            console.log(`[DEBUG] ⚠️ ALERTA - Campo ${fieldName} detectado com valor: "${args[fieldName]}"`);
+            console.log(`[DEBUG] ⚠️ ALERTA - O campo correto deveria ser ${correctFieldName}`);
+          }
+        }
+        
+        // Log genérico para todos os campos recebidos
+        console.log(`[DEBUG] 📋 CAMPOS RECEBIDOS NA FUNÇÃO ${functionName}:`);
+        Object.entries(args).forEach(([key, value]) => {
+          console.log(`[DEBUG]   - ${key}: ${JSON.stringify(value)}`);
+        });
+        
+        console.log(`Argumentos da função ${functionName}:`, args);
+      } catch (parseError) {
+        console.error(`[DEBUG] ❌ Erro ao fazer parse dos argumentos da função:`, parseError);
+        console.error(`Erro ao fazer parse dos argumentos da função:`, parseError);
+        args = {}; // Usa objeto vazio se não conseguir fazer o parse
+      }
+
+      // Verifica se a API base URL está configurada
+      console.log(`[DEBUG] 🔧 URL base configurada: ${config.API_BASE_URL}`);
+      
+      // Utiliza o mapeamento da função para determinar o caminho e método
+      const { path: mappedPath, method: mappedMethod } = ExternalApiService.mapFunctionToEndpoint(functionName, args);
+      
+      // Extrai os parâmetros da função para a API
+      const apiPath = args.path || args.url || args.endpoint || mappedPath;
+      const method = args.method || args.http_method || mappedMethod;
+      
+      console.log(`[DEBUG] 🔧 Parâmetros finais - Path: ${apiPath}, Method: ${method}`);
+      console.log(`[DEBUG] 🔍 DETALHADO - Verificando origem do path:`);
+      if (args.path) {
+        console.log(`[DEBUG]   - Path vem do argumento 'path': ${args.path}`);
+      } else if (args.url) {
+        console.log(`[DEBUG]   - Path vem do argumento 'url': ${args.url}`);
+      } else if (args.endpoint) {
+        console.log(`[DEBUG]   - Path vem do argumento 'endpoint': ${args.endpoint}`);
+      } else {
+        console.log(`[DEBUG]   - Path vem do mapeamento da função: ${mappedPath}`);
+      }
+      
+      // Para os dados, removemos qualquer parâmetro especial como path, url, etc.
+      const apiData = ExternalApiService.validateRequestData(functionName, method, args);
+
+      console.log(`[DEBUG] 🚀 Tentando fazer chamada à API para função: ${functionName}`);
+      try {
+        // Faz a chamada à API
+        const apiResponse = await ExternalApiService.callExternalApi(apiPath, method, apiData, functionName);
+        console.log(`[DEBUG] ✅ Resposta da API para função ${functionName}:`, JSON.stringify(apiResponse, null, 2));
+        
+        // Adiciona o resultado para retornar ao assistente
+        results.push({
+          tool_call_id: toolCallId,
+          output: JSON.stringify(apiResponse)
+        });
+        
+      } catch (apiError: any) {
+        // Em caso de erro na API, também retornamos para o assistente
+        console.error(`[DEBUG] ❌ Erro ao chamar API para função ${functionName}:`, apiError);
+        console.error(`Erro ao chamar API para função ${functionName}:`, apiError.message);
+        
+        // Logs detalhados para erro de validação (422)
+        if (apiError.message && apiError.message.includes('422')) {
+          console.error(`[DEBUG] 🔍 ERRO DE VALIDAÇÃO 422 - Detalhes adicionais:`);
+          console.error(`[DEBUG]   - Função: ${functionName}`);
+          console.error(`[DEBUG]   - Path: ${apiPath}`);
+          console.error(`[DEBUG]   - Method: ${method}`);
+          console.error(`[DEBUG]   - Dados enviados:`, JSON.stringify(apiData, null, 2));
+          
+          // Tenta extrair detalhes específicos do erro se possível
+          try {
+            const errorMsg = apiError.message;
+            const errorDataMatch = errorMsg.match(/\{.*\}/);
+            if (errorDataMatch) {
+              const errorData = JSON.parse(errorDataMatch[0]);
+              console.error(`[DEBUG]   - Detalhes do erro:`, JSON.stringify(errorData, null, 2));
+            }
+          } catch (parseErr) {
+            console.error(`[DEBUG]   - Não foi possível extrair detalhes estruturados do erro`);
+          }
+        }
+        
+        // Retorna o erro para o assistente
+        results.push({
+          tool_call_id: toolCallId,
+          output: JSON.stringify({ 
+            error: true, 
+            message: apiError.message,
+            status: apiError.status || 'unknown'
+          })
+        });
+      }
+    } catch (error: any) {
+      console.error(`[DEBUG] ❌ Erro geral ao processar função ${functionName}:`, error);
+      console.error(`Erro geral ao processar função ${functionName}:`, error.message);
+      
+      // Retorna o erro para o assistente
+      results.push({
+        tool_call_id: toolCallId,
+        output: JSON.stringify({ 
+          error: true, 
+          message: `Erro ao processar função: ${error.message || 'Erro desconhecido'}` 
+        })
+      });
+    }
+  }
+
+  return results;
+}
+
+// Modifica a função processAggregatedMessage para usar o processador de funções
 async function processAggregatedMessage(sender: string, aggregator: Aggregator) {
   try {
     const dbThread = await findOrCreateThread(sender);
@@ -377,8 +583,19 @@ async function processAggregatedMessage(sender: string, aggregator: Aggregator) 
     // Salva a mensagem do usuário diretamente no banco
     await saveMessageDirectly(dbThread.id!, 'user', aggregator.aggregatedText);
     
-    // Continua com a chamada à OpenAI
-    const response = await assistantResponse(dbThread.openai_thread_id, aggregator.aggregatedText);
+    // Define as ferramentas disponíveis para o assistente
+    console.log(`[DEBUG] 🔧 processAggregatedMessage - Configurando ferramentas para enviar ao assistente`);
+    const availableTools = getAvailableTools();
+    console.log(`[DEBUG] 📋 processAggregatedMessage - Ferramentas configuradas:`, 
+      JSON.stringify(availableTools.map(t => t.function?.name), null, 2));
+    
+    // Continua com a chamada à OpenAI, passando o callback para processar funções
+    const response = await assistantResponse(
+      dbThread.openai_thread_id, 
+      aggregator.aggregatedText,
+      availableTools,
+      processFunctionCalls // Passa o callback para processar funções
+    );
     console.log('Resposta do assistente (agrupada):', response);
     
     // Salva a resposta do assistente diretamente no banco
@@ -523,7 +740,19 @@ client.on('message', async (message: Message) => {
         
         // Obtém resposta do assistente
         console.log(`Enviando para o assistente, thread ${dbThread.openai_thread_id}`);
-        const response = await assistantResponse(dbThread.openai_thread_id, userMessage);
+        
+        // Define as ferramentas disponíveis (mesmas da função processAggregatedMessage)
+        console.log(`[DEBUG] 🔧 mensagem de mídia - Configurando ferramentas para enviar ao assistente`);
+        const availableTools = getAvailableTools();
+        console.log(`[DEBUG] 📋 mensagem de mídia - Ferramentas configuradas:`, 
+          JSON.stringify(availableTools.map(t => t.function?.name), null, 2));
+        
+        const response = await assistantResponse(
+          dbThread.openai_thread_id, 
+          userMessage, 
+          availableTools,
+          processFunctionCalls // Adiciona o processador de funções
+        );
         console.log('Resposta do assistente:', response);
         
         // Salva a resposta do assistente diretamente no banco e na fila
@@ -606,3 +835,18 @@ client.on('message', async (message: Message) => {
   
   client.initialize();
 };
+
+/**
+ * Retorna as ferramentas disponíveis para o assistente
+ * Centraliza a definição de ferramentas para facilitar manutenção
+ */
+function getAvailableTools(): any[] {
+  console.log(`[DEBUG] 🔧 getAvailableTools - Ferramentas disponíveis serão determinadas pelo Playground OpenAI`);
+  
+  // Retorna um array vazio, pois as ferramentas serão definidas no Playground da OpenAI
+  // Não precisamos definir as ferramentas aqui, elas virão configuradas pelo assistente
+  const tools: any[] = [];
+  
+  console.log(`[DEBUG] ℹ️ getAvailableTools - Nenhuma ferramenta definida localmente, usando configuração do Playground OpenAI`);
+  return tools;
+}
