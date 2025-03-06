@@ -220,53 +220,131 @@ export class ExternalApiService {
   /**
    * Obtém a URL completa para um caminho da API
    */
-  public getApiUrl(path: string): string {
-    const baseUrl = this.getBaseUrl();
-    
-    if (!baseUrl) {
-      this.log('warn', 'URL base não configurada, usando localhost:3000');
-      return `http://localhost:3000/${path.startsWith('/') ? path.substring(1) : path}`;
-    }
-    
-    return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  /**
+ * Obtém a URL completa para um caminho da API
+ * Versão com debug extensivo
+ */
+public getApiUrl(path: string): string {
+  console.log(`\n========== INÍCIO GET API URL ==========`);
+  console.log(`[DEBUG] 🔍 getApiUrl - Path solicitado: "${path}"`);
+  
+  const baseUrl = this.getBaseUrl();
+  console.log(`[DEBUG] 🌐 getApiUrl - URL base obtida: ${baseUrl || 'NÃO CONFIGURADA!'}`);
+  
+  if (!baseUrl) {
+    console.log(`[DEBUG] ⚠️ getApiUrl - URL base não configurada, usando fallback: http://localhost:3000`);
+    const fallbackUrl = `http://localhost:3000/${path.startsWith('/') ? path.substring(1) : path}`;
+    console.log(`[DEBUG] 🔗 getApiUrl - URL final (fallback): ${fallbackUrl}`);
+    console.log(`========== FIM GET API URL (FALLBACK) ==========\n`);
+    return fallbackUrl;
   }
+  
+  // Verifica se a URL base já termina com barra
+  const baseEndsWithSlash = baseUrl.endsWith('/');
+  console.log(`[DEBUG] 🔍 getApiUrl - URL base termina com barra: ${baseEndsWithSlash}`);
+  
+  // Verifica se o caminho está vazio ou é apenas "/"
+  if (!path || path === '/') {
+    console.log(`[DEBUG] ℹ️ getApiUrl - Path vazio ou apenas "/", retornando apenas a URL base`);
+    const finalUrl = baseEndsWithSlash ? baseUrl.slice(0, -1) : baseUrl;
+    console.log(`[DEBUG] 🔗 getApiUrl - URL final (apenas base): ${finalUrl}`);
+    console.log(`========== FIM GET API URL (APENAS BASE) ==========\n`);
+    return finalUrl;
+  }
+  
+  // Adiciona barra entre base e path apenas se necessário
+  let finalUrl;
+  if (baseEndsWithSlash) {
+    finalUrl = `${baseUrl}${path.startsWith('/') ? path.substring(1) : path}`;
+    console.log(`[DEBUG] ℹ️ getApiUrl - URL base termina com barra, ajustando path`);
+  } else {
+    finalUrl = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    console.log(`[DEBUG] ℹ️ getApiUrl - URL base não termina com barra, mantendo/adicionando barra ao path`);
+  }
+  
+  console.log(`[DEBUG] 🔗 getApiUrl - URL final: ${finalUrl}`);
+  console.log(`========== FIM GET API URL ==========\n`);
+  return finalUrl;
+}
   
   /**
    * Mapeia um nome de função e argumentos para um endpoint da API
    */
-  public mapFunctionToEndpoint(
-    functionName: string, 
-    args: any = {}
-  ): { path: string; method: Method; } {
-    this.log('debug', `Mapeando função: "${functionName}"`, args);
-    
-    // Verifica se temos um mapeamento personalizado para esta função
-    if (this.endpointMappings[functionName]) {
-      const mapping = this.endpointMappings[functionName];
-      this.log('debug', `Usando mapeamento personalizado para ${functionName}: ${mapping.method} ${mapping.path}`);
-      return mapping;
-    }
-    
-    // Verifica se path/url/endpoint foi fornecido nos argumentos
-    let path = args.path || args.url || args.endpoint || '';
-    let method = (args.method || args.http_method || 'POST').toUpperCase() as Method;
-    
-    // Se nenhum path foi fornecido, converte o nome da função para formato URL
-    if (!path) {
-      // Converte camelCase ou snake_case para kebab-case
-      path = functionName
-        .replace(/_/g, '-')
-        .replace(/([a-z])([A-Z])/g, '$1-$2')
-        .toLowerCase();
-      
-      this.log('debug', `Nenhum path explícito, usando nome da função como path: ${path}`);
-    } else {
-      this.log('debug', `Usando path dos argumentos: ${path}`);
-    }
-    
-    this.log('info', `Mapeado ${functionName} => ${method} ${path}`);
-    return { path, method };
+  /**
+ * Mapeia um nome de função e argumentos para um endpoint da API
+ * Versão com logs detalhados para depuração
+ */
+public mapFunctionToEndpoint(
+  functionName: string, 
+  args: any = {}
+): { path: string; method: Method; } {
+  console.log(`\n[DEBUG - MAP] 🔍 Mapeando função: "${functionName}"`);
+  console.log(`[DEBUG - MAP] 📊 Argumentos recebidos:`, JSON.stringify(args, null, 2));
+  
+  // Verificação especial para APIs que não necessitam de path
+  if (args.noPath === true || args.rootEndpoint === true) {
+    console.log(`[DEBUG - MAP] ℹ️ Função ${functionName} configurada para acessar raiz da API (noPath/rootEndpoint = true)`);
+    console.log(`[DEBUG - MAP] ✅ Mapeamento final: ${functionName} => ${args.method || 'GET'} ''`);
+    return { path: '', method: (args.method || 'GET').toUpperCase() as Method };
   }
+  
+  // Verifica se temos um mapeamento personalizado para esta função
+  console.log(`[DEBUG - MAP] 🔍 Verificando se existe mapeamento personalizado para ${functionName}`);
+  if (this.endpointMappings[functionName]) {
+    const mapping = this.endpointMappings[functionName];
+    console.log(`[DEBUG - MAP] ✅ Mapeamento personalizado encontrado: ${functionName} => ${mapping.method} ${mapping.path}`);
+    return mapping;
+  } else {
+    console.log(`[DEBUG - MAP] ℹ️ Nenhum mapeamento personalizado encontrado para ${functionName}`);
+  }
+  
+  // Verifica se path/url/endpoint foi fornecido nos argumentos
+  console.log(`[DEBUG - MAP] 🔍 Buscando path nos argumentos (path, url, endpoint)`);
+  let path = args.path || args.url || args.endpoint || '';
+  let method = (args.method || args.http_method || 'POST').toUpperCase() as Method;
+  
+  if (path) {
+    console.log(`[DEBUG - MAP] ✅ Path encontrado nos argumentos: "${path}"`);
+    console.log(`[DEBUG - MAP] ℹ️ Origem do path: "${args.path ? 'path' : (args.url ? 'url' : 'endpoint')}"`);
+  } else {
+    console.log(`[DEBUG - MAP] ℹ️ Nenhum path explícito nos argumentos`);
+  }
+  
+  console.log(`[DEBUG - MAP] 🧰 Método HTTP especificado: ${method}`);
+  
+  // Se nenhum path foi fornecido, converte o nome da função para formato URL
+  if (!path) {
+    // Converte camelCase ou snake_case para kebab-case
+    path = functionName
+      .replace(/_/g, '-')
+      .replace(/([a-z])([A-Z])/g, '$1-$2')
+      .toLowerCase();
+    
+    console.log(`[DEBUG - MAP] 🔄 Usando nome da função como path: "${path}"`);
+  }
+  
+  // Verificações adicionais para ordens de serviço ou outros endpoints comuns
+  if (functionName.includes('ordem') || functionName.includes('order')) {
+    console.log(`[DEBUG - MAP] 🔍 Detectada possível ordem de serviço na função: ${functionName}`);
+    
+    // Verificar se path contém ordens-servico
+    if (!path.includes('ordens-servico') && !path.includes('ordem') && !path.includes('order')) {
+      console.log(`[DEBUG - MAP] ⚠️ Função parece ser relacionada a ordens mas path não contém 'ordens-servico'`);
+      console.log(`[DEBUG - MAP] 🔄 Verificando se devemos usar caminho específico para ordens de serviço`);
+      
+      // Decisão baseada em heurística
+      if (functionName === 'create_ordem_servico' || 
+          functionName === 'ordens-servico' || 
+          functionName === 'create_order_service') {
+        console.log(`[DEBUG - MAP] 🔄 Redirecionando para endpoint padrão de ordens: '/ordens-servico'`);
+        path = 'ordens-servico';
+      }
+    }
+  }
+  
+  console.log(`[DEBUG - MAP] ✅ Mapeamento final: ${functionName} => ${method} ${path}`);
+  return { path, method };
+}
   
   /**
    * Valida e transforma dados de requisição
@@ -665,57 +743,102 @@ export class ExternalApiService {
   /**
    * Executa manualmente uma chamada de função definida pelo Assistente da OpenAI
    */
-  public async executeFunctionCall(
-    functionCall: {
-      name: string;
-      arguments: string;
-    }
-  ): Promise<any> {
-    try {
-      const functionName = functionCall.name;
-      let args: any = {};
-      
-      try {
-        args = JSON.parse(functionCall.arguments || '{}');
-      } catch (e) {
-        console.error(`Falha ao analisar argumentos da função: ${functionCall.arguments}`, e);
-        throw new Error(`Argumentos da função inválidos: ${e.message}`);
-      }
-      
-      console.log(`Executando chamada de função: ${functionName}`, args);
-      
-      // Obtém a instância singleton
-      const instance = ExternalApiService.getInstance();
-      
-      // Mapeia a função para um endpoint
-      const { path, method } = instance.mapFunctionToEndpoint(functionName, args);
-      
-      // Extrai configuração de autenticação se presente
-      const auth: AuthConfig | undefined = args.auth;
-      
-      // Faz a chamada da API
-      const response = await instance.callExternalApi(
-        path, 
-        method, 
-        args, 
-        { 
-          functionName,
-          auth
-        }
-      );
-      
-      return response;
-    } catch (error: any) {
-      console.error(`Erro de execução da função: ${error.message}`, error);
-      return {
-        success: false,
-        error: {
-          message: error.message,
-          code: 'FUNCTION_EXECUTION_ERROR'
-        }
-      };
-    }
+  /**
+ * Executa manualmente uma chamada de função definida pelo Assistente da OpenAI
+ * Método estático para compatibilidade com chamadas existentes
+ */
+public async executeFunctionCall(
+  functionCall: {
+    name: string;
+    arguments: string;
   }
+): Promise<any> {
+  console.log('\n' + '='.repeat(80));
+  console.log(`[DEBUG - EFC] 🚀 ExternalApiService.executeFunctionCall iniciado`);
+  console.log(`[DEBUG - EFC] 📝 Função: "${functionCall.name}"`);
+  console.log(`[DEBUG - EFC] 📋 Argumentos brutos: ${functionCall.arguments}`);
+  
+  try {
+    const functionName = functionCall.name;
+    let args: any = {};
+    
+    try {
+      args = JSON.parse(functionCall.arguments || '{}');
+      console.log(`[DEBUG - EFC] 📊 Argumentos parseados:`, JSON.stringify(args, null, 2));
+    } catch (e) {
+      console.error(`[DEBUG - EFC] ❌ Falha ao analisar argumentos da função: ${e.message}`);
+      console.error(`[DEBUG - EFC] 📄 Argumentos problemáticos: ${functionCall.arguments}`);
+      throw new Error(`Argumentos da função inválidos: ${e.message}`);
+    }
+    
+    // Obtém a instância singleton
+    console.log(`[DEBUG - EFC] 🔍 Obtendo instância do ExternalApiService`);
+    const instance = ExternalApiService.getInstance();
+    
+    // Verifica a URL base
+    const baseUrl = instance.getBaseUrl();
+    console.log(`[DEBUG - EFC] 🌐 URL base configurada: ${baseUrl || 'NÃO CONFIGURADA!'}`);
+    
+    if (!baseUrl) {
+      console.error(`[DEBUG - EFC] ❌ ERRO: URL base não configurada!`);
+      throw new Error('URL base da API externa não configurada. Configure antes de chamar funções.');
+    }
+    
+    // Mapeia a função para um endpoint
+    console.log(`[DEBUG - EFC] 🗺️ Mapeando função '${functionName}' para endpoint...`);
+    const { path, method } = instance.mapFunctionToEndpoint(functionName, args);
+    console.log(`[DEBUG - EFC] ✅ Mapeamento: ${functionName} => ${method} ${path}`);
+    
+    // Obtém a URL completa
+    const apiUrl = instance.getApiUrl(path);
+    console.log(`[DEBUG - EFC] 🔗 URL completa: ${apiUrl}`);
+    
+    // Extrai configuração de autenticação se presente
+    const auth = args.auth;
+    if (auth) {
+      console.log(`[DEBUG - EFC] 🔐 Autenticação configurada:`, JSON.stringify(auth, null, 2));
+    } else {
+      console.log(`[DEBUG - EFC] 🔓 Sem configuração de autenticação`);
+    }
+    
+    // Faz a chamada da API
+    console.log(`[DEBUG - EFC] 📡 Executando chamada à API: ${method} ${apiUrl}`);
+    console.log(`[DEBUG - EFC] ⏱️ Timestamp: ${new Date().toISOString()}`);
+    
+    const response = await instance.callExternalApi(
+      path, 
+      method, 
+      args, 
+      { 
+        functionName,
+        auth
+      }
+    );
+    
+    console.log(`[DEBUG - EFC] ✅ Chamada bem-sucedida!`);
+    console.log(`[DEBUG - EFC] 📥 Resposta:`, typeof response === 'string' ? response : 
+      JSON.stringify(response, null, 2).substring(0, 500) + 
+      (JSON.stringify(response, null, 2).length > 500 ? '...' : ''));
+    
+    console.log(`[DEBUG - EFC] 🏁 executeFunctionCall concluído com sucesso`);
+    console.log('='.repeat(80) + '\n');
+    
+    return response;
+  } catch (error: any) {
+    console.error(`[DEBUG - EFC] ❌ ERRO em executeFunctionCall: ${error.message}`);
+    console.error(`[DEBUG - EFC] 📚 Stack trace:`, error.stack);
+    console.log('='.repeat(80) + '\n');
+    
+    return {
+      success: false,
+      error: {
+        message: error.message,
+        code: 'FUNCTION_EXECUTION_ERROR',
+        stack: error.stack
+      }
+    };
+  }
+}
 }
 
 // Exporta uma instância singleton para compatibilidade com código existente
