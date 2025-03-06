@@ -432,79 +432,97 @@ const DEBOUNCE_DELAY = 3000; // 3 segundos
 
 /**
  * Processa as chamadas de ferramentas do assistente
+ * Implementação genérica que funciona com qualquer API externa
+ * @param run O objeto run do OpenAI com as ferramentas a serem processadas
+ * @returns Array de resultados das ferramentas
+ */
+/**
+ * Processa as chamadas de ferramentas do assistente de forma genérica com depuração extensiva
  * @param run O objeto run do OpenAI com as ferramentas a serem processadas
  * @returns Array de resultados das ferramentas
  */
 async function processFunctionCalls(run: any): Promise<any[]> {
+  console.debug(`[DEBUG] ✨ INÍCIO processFunctionCalls`);
+  console.debug(`[DEBUG] 🔍 Status do run: ${run.status}`);
+  
   const results: any[] = [];
 
+  // Verifica se o run requer ação
   if (run.status !== 'requires_action' || run.required_action?.type !== 'submit_tool_outputs') {
+    console.debug(`[DEBUG] ℹ️ Run não requer ação. Status atual: ${run.status}`);
     return results;
   }
 
+  // Obtém as chamadas de função
   const toolCalls = run.required_action.submit_tool_outputs.tool_calls;
-  console.log(`Processando ${toolCalls.length} chamada(s) de função`);
-  
+  console.debug(`[DEBUG] 🛠️ Número de chamadas de função: ${toolCalls.length}`);
+
+  // Processa cada chamada de função
   for (const toolCall of toolCalls) {
     const functionName = toolCall.function.name;
     const toolCallId = toolCall.id;
 
+    console.debug(`[DEBUG] 🔧 Processando função: ${functionName}`);
+    console.debug(`[DEBUG] 🆔 Tool Call ID: ${toolCallId}`);
+
     try {
-      console.log(`Processando chamada de função: ${functionName}`);
-      
-      // Adicione um tratamento especial para ordens-servico
-      if (functionName === 'create_ordem_servico' || functionName === 'ordens-servico') {
-        console.log(`Detectada função especial: ${functionName}`);
-        
-        let args = {};
-        try {
-          args = JSON.parse(toolCall.function.arguments || '{}');
-        } catch (e) {
-          console.error(`Erro ao analisar argumentos da função:`, e);
-        }
-        
-        // Faz a chamada direta à API usando o path correto
-        const apiResponse = await ExternalApiService.getInstance().post(
-          '/ordens-servico',
-          args,
-          { functionName }
-        );
-        
-        // Adiciona o resultado ao array de respostas
-        results.push({
-          tool_call_id: toolCallId,
-          output: JSON.stringify(apiResponse)
-        });
-        
-        console.log(`Função ${functionName} executada manualmente com sucesso`);
-      } else {
-        // Para outras funções, usa a implementação normal
-        const response = await ExternalApiService.executeFunctionCall({
-          name: functionName,
-          arguments: toolCall.function.arguments || '{}'
-        });
-        
-        // Adiciona o resultado ao array de respostas
-        results.push({
-          tool_call_id: toolCallId,
-          output: typeof response === 'string' ? response : JSON.stringify(response)
-        });
-        
-        console.log(`Função ${functionName} executada com sucesso`);
+      // Analisa os argumentos da função
+      let args = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || '{}');
+        console.debug(`[DEBUG] 📋 Argumentos da função:`, JSON.stringify(args, null, 2));
+      } catch (e) {
+        console.error(`[DEBUG] ❌ Erro ao analisar argumentos da função:`, e);
+        console.error(`[DEBUG] 🚨 Argumentos problemáticos:`, toolCall.function.arguments);
       }
+
+      // Executa a função de forma genérica
+      console.debug(`[DEBUG] 🚀 Executando função via ExternalApiService`);
+      const apiResponse = await ExternalApiService.getInstance().executeFunctionCall({
+        name: functionName,
+        arguments: JSON.stringify(args)
+      });
+
+      console.debug(`[DEBUG] ✅ Função executada com sucesso`);
+      console.debug(`[DEBUG] 📥 Resposta da API:`, 
+        typeof apiResponse === 'string' 
+          ? apiResponse 
+          : JSON.stringify(apiResponse, null, 2).substring(0, 500) + 
+            (JSON.stringify(apiResponse, null, 2).length > 500 ? '...' : '')
+      );
+
+      // Adiciona o resultado ao array de respostas
+      results.push({
+        tool_call_id: toolCallId,
+        output: typeof apiResponse === 'string' 
+          ? apiResponse 
+          : JSON.stringify(apiResponse)
+      });
+
+      console.debug(`[DEBUG] 📤 Resultado adicionado para tool call ${toolCallId}`);
+
     } catch (error: any) {
-      console.error(`Erro ao executar função ${functionName}:`, error);
-      
-      // Retorna o erro para o assistente
+      console.error(`[DEBUG] ❌ Erro ao executar função ${functionName}:`, error);
+
+      // Adiciona informações detalhadas de erro
       results.push({
         tool_call_id: toolCallId,
         output: JSON.stringify({ 
           error: true, 
-          message: `Erro ao executar função: ${error.message || 'Erro desconhecido'}` 
+          message: `Erro ao executar função: ${error.message || 'Erro desconhecido'}`,
+          details: {
+            functionName,
+            errorStack: error.stack
+          }
         })
       });
+
+      console.debug(`[DEBUG] 🚨 Resultado de erro adicionado para tool call ${toolCallId}`);
     }
   }
+
+  console.debug(`[DEBUG] 🏁 FIM processFunctionCalls`);
+  console.debug(`[DEBUG] 📊 Total de resultados: ${results.length}`);
 
   return results;
 }
@@ -778,13 +796,29 @@ client.on('message', async (message: Message) => {
  * Retorna as ferramentas disponíveis para o assistente
  * Centraliza a definição de ferramentas para facilitar manutenção
  */
+/**
+ * Retorna as ferramentas disponíveis para o assistente com depuração extensiva
+ * Centraliza a definição de ferramentas para facilitar manutenção
+ */
 function getAvailableTools(): any[] {
-  console.log(`[DEBUG] 🔧 getAvailableTools - Ferramentas disponíveis serão determinadas pelo Playground OpenAI`);
+  console.debug(`[DEBUG] 🔧 INÍCIO getAvailableTools`);
+  console.debug(`[DEBUG] 📋 Configurando ferramentas para o assistente`);
   
+  // Mensagem de log explicando a abordagem de ferramentas
+  console.debug(`[DEBUG] ℹ️ Abordagem de ferramentas:`);
+  console.debug(`[DEBUG]   - Nenhuma ferramenta definida localmente`);
+  console.debug(`[DEBUG]   - Ferramentas serão carregadas do Playground da OpenAI`);
+  console.debug(`[DEBUG]   - Configuração flexível para suportar diferentes APIs`);
+
   // Retorna um array vazio, pois as ferramentas serão definidas no Playground da OpenAI
-  // Não precisamos definir as ferramentas aqui, elas virão configuradas pelo assistente
   const tools: any[] = [];
   
-  console.log(`[DEBUG] ℹ️ getAvailableTools - Nenhuma ferramenta definida localmente, usando configuração do Playground OpenAI`);
+  console.debug(`[DEBUG] 🔍 Detalhes da configuração de ferramentas:`);
+  console.debug(`[DEBUG]   - Número de ferramentas locais: ${tools.length}`);
+  console.debug(`[DEBUG]   - Fonte de ferramentas: Playground OpenAI`);
+  console.debug(`[DEBUG]   - Configuração: Dinâmica e adaptável`);
+
+  console.debug(`[DEBUG] 🏁 FIM getAvailableTools`);
+  
   return tools;
 }
