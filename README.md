@@ -1,153 +1,227 @@
+# Garra AI Companion
 
-# 📙 **README - Sistema de Bot de WhatsApp Integrado com OpenAI e API Externa**
+Um bot para WhatsApp com uma persona que utiliza a API Assistant da OpenAI, oferecendo uma experiência de companhia de IA através do WhatsApp.
 
-## 🖋️ **Índice**
-1. [🖐 Visão Geral](#-visao-geral)
-2. [🔧️ Tecnologias Utilizadas](#️-tecnologias-utilizadas)
-3. [⚙️ Configuração do Ambiente](#️-configuracao-do-ambiente)
-4. [🚀 Como Executar o Sistema](#-como-executar-o-sistema)
-5. [📡 Estrutura do Sistema](#-estrutura-do-sistema)
-6. [🔍 Explicação dos Principais Arquivos](#-explicacao-dos-principais-arquivos)
-7. [🚀 Principais Funcionalidades](#-principais-funcionalidades)
-8. [📢 Eventos do WhatsApp](#-eventos-do-whatsapp)
-9. [💬 Como Usar o Bot](#-como-usar-o-bot)
-10. [🔧️ Possíveis Erros e Soluções](#️-possiveis-erros-e-solucoes)
-11. [🎮 Como Usar o Playground do OpenAI](#-como-usar-o-playground-do-openai)
-12. [🛠️ Contribuição](#-contribuicao)
-13. [📜 Licença](#-licenca)
+## Visão Geral
 
----
+O Garra AI Companion é um bot para WhatsApp que conecta a poderosa API Assistant da OpenAI com o WhatsApp, permitindo que os usuários interajam com um assistente de IA através de suas mensagens no WhatsApp. O bot suporta mensagens de texto, notas de voz (com transcrição), imagens (com análise de visão) e processamento de arquivos (PDFs, TXT).
 
-## 🖐 **Visão Geral**
-Este projeto é um sistema de automação de mensagens no **WhatsApp** utilizando a biblioteca **@periskope/whatsapp-web.js**. Ele se integra com a API da **OpenAI** para processar mensagens e realizar ações dinâmicas através do **Assistant Playground**. Também possui suporte para chamadas de API externas personalizadas.
+## Funcionalidades Principais
 
-O sistema realiza as seguintes funções principais:
-- Recebe e processa mensagens de usuários do WhatsApp.
-- Integra com o **OpenAI Assistant Playground** para gerar respostas inteligentes.
-- Suporte a **chamadas de API externas dinâmicas**.
-- Exibe o QR Code no terminal para autenticar o bot.
+- **Integração com WhatsApp**: Conecte-se com usuários via WhatsApp
+- **API Assistant da OpenAI**: Aproveite as capacidades de IA usando a API Assistant da OpenAI
+- **Suporte a Multimídia**:
+  - Transcrição de notas de voz usando a API Whisper
+  - Análise de imagens com GPT-4 Vision
+  - Processamento de arquivos PDF e TXT
+- **Integração com API Externa**: Conecte-se a serviços externos através de um serviço de API flexível
+- **Gerenciamento de Configuração**: Configuração armazenada em banco de dados com interface web
+- **Persistência de Mensagens**: Armazene o histórico de conversas em um banco de dados PostgreSQL
+- **Gerenciamento de Conversas**: Pause/retome conversas
+- **Fila de Mensagens**: Fila baseada em Redis para processar mensagens em ordem
+- **Autenticação**: Autenticação baseada em código QR para WhatsApp Web
 
----
+## Arquitetura
 
-## 🔧️ **Tecnologias Utilizadas**
-- **Node.js**: Ambiente de execução para JavaScript no servidor.
-- **TypeScript**: Linguagem com tipagem estática.
-- **@periskope/whatsapp-web.js**: Integração com o WhatsApp Web.
-- **OpenAI**: Utilizado para gerar respostas e realizar ações baseadas em IA.
-- **Axios**: Para realizar requisições HTTP para APIs externas.
-- **dotenv**: Carregamento de variáveis de ambiente a partir do arquivo `.env`.
-- **EventEmitter**: Utilizado para gerenciar eventos de QR Code.
-- **QR Code**: Para exibição do QR Code no terminal.
+A aplicação consiste em vários componentes:
 
----
+### Componentes Principais
 
-## ⚙️ **Configuração do Ambiente**
-1. **Pré-requisitos**
-   - Node.js (versão LTS recomendada)
-   - npm ou yarn
-   - Conta na OpenAI para obter a API Key
-   
-2. **Instalar dependências**
-   ```bash
-   npm install
-   ```
+1. **Cliente WhatsApp**: Gerencia a conexão com o WhatsApp Web usando `@periskope/whatsapp-web.js`
+2. **Cliente OpenAI**: Lida com interações com a API da OpenAI para Assistant, Vision e Whisper
+3. **Banco de Dados**: Banco de dados PostgreSQL para armazenar conversas, mensagens e configurações
+4. **Fila Redis**: Para processamento assíncrono de mensagens
+5. **Servidor Express**: Fornece uma API REST para gerenciar o bot
+6. **Serviço de API Externa**: Proxy genérico para conexão com APIs externas
 
-3. **Configurar variáveis de ambiente**
-   Crie o arquivo `.env` na raiz do projeto com as seguintes variáveis:
-   ```env
-   API_BASE_URL=https://sua-api.com/api/
-   OPENAI_API_KEY=sua_chave_openai
-   ASSISTANT_ID=seu_assistant_id
-   ```
+### Modelos de Banco de Dados
 
----
+- **Thread**: Representa uma conversa com um usuário
+- **ThreadMessage**: Mensagens individuais em uma thread
+- **Config**: Valores de configuração do sistema
 
-## 🚀 **Como Executar o Sistema**
-1. **Instale as dependências**:
-   ```bash
-   npm install
-   ```
+### Fluxo de Serviço
 
-2. **Inicie o sistema**:
-   ```bash
-   npm start
-   ```
-   
-3. **Autenticação do WhatsApp**:
-   - No terminal, um QR Code será exibido.
-   - Escaneie o QR Code com o aplicativo do WhatsApp.
-   - Após isso, o bot estará pronto para receber e responder mensagens.
+1. Usuário envia uma mensagem para o número do WhatsApp
+2. Bot recebe a mensagem via cliente WhatsApp Web
+3. Para mensagens de texto:
+   - As mensagens são agregadas com debounce (3s) para combinar mensagens fragmentadas
+   - A thread é criada ou recuperada do banco de dados
+   - A mensagem é enviada para a API Assistant da OpenAI
+   - A resposta é enviada de volta ao usuário
+4. Para mídia (notas de voz, imagens, arquivos):
+   - A mídia é processada imediatamente (transcrição, análise de visão, extração de texto)
+   - O resultado é enviado para a API Assistant da OpenAI
+   - A resposta é enviada de volta ao usuário
+5. Todas as mensagens são armazenadas no banco de dados
 
----
+## Instalação
 
-## 📡 **Estrutura do Sistema**
+### Pré-requisitos
+
+- Node.js (v14+)
+- Banco de dados PostgreSQL
+- Servidor Redis
+- Chave de API da OpenAI
+- Conta de WhatsApp
+
+### Variáveis de Ambiente
+
+Crie um arquivo `.env` no diretório raiz com as seguintes variáveis:
+
 ```
-📦 projeto-bot
- ┣ 📂 cli
- ┣ 📂 config
- ┣ 📂 constants
- ┣ 📂 node_modules
- ┣ 📜 .env
- ┣ 📜 package.json
- ┣ 📜 README.md
- ┣ 📜 tsconfig.json
- ┣ 📜 index.ts
+# Configuração Principal
+OPENAI_API_KEY=sua_chave_api_openai
+ASSISTANT_ID=seu_id_de_assistente
+BOT_NAME=Garra
+WHATSAPP_NUMBER=seu_numero_whatsapp
+
+# Configuração do Banco de Dados
+DATABASE_URL=postgres://usuario:senha@localhost:5432/nome_do_banco
+
+# Configuração do Redis
+REDIS_URL=redis://localhost:6379
+
+# Configuração da API
+API_BASE_URL=https://sua-api-externa.com
 ```
-**Principais Arquivos:**
-- **index.ts**: Arquivo principal que inicializa o bot e o WhatsApp.
-- **config/**: Configurações gerais do sistema.
-- **cli/**: Interface de linha de comando (exibição de QR Code, mensagens, etc).
-- **constants/**: Arquivos de constantes globais (como paths e URLs).
 
----
+### Configuração
 
-## 🎮 **Como Usar o Playground do OpenAI**
-O OpenAI Playground permite criar **System Instructions** e **Functions** personalizadas para otimizar o comportamento da IA e definir fluxos de trabalho dinâmicos.
+1. Instale as dependências:
+```bash
+npm install
+```
 
-### 🔧 **Passo a Passo**
+2. Migre o banco de dados:
+```bash
+npm run migrate
+```
 
-#### 1. **Acessar o Playground**
-- Acesse o site do OpenAI e navegue até a opção **Playground**.
-- Garanta que você esteja logado com uma conta com permissões de uso de IA da OpenAI.
+3. Inicie o bot:
+```bash
+npm start
+```
 
-#### 2. **Configurar a System Instruction**
-- A **System Instruction** define o contexto e as regras que o assistente seguirá ao responder.
-- Exemplo de System Instruction:
-  ```text
-  Você é um assistente de IA especializado em responder perguntas de forma clara e objetiva. Responda com empatia e mantenha a simplicidade nas suas respostas.
-  ```
+4. Escaneie o código QR exibido com o WhatsApp para autenticar
 
-#### 3. **Criar as Functions**
-- As **Functions** permitem que a IA chame funções específicas dentro do sistema, como consultas de API, chamadas de ferramentas externas, entre outros.
-- No OpenAI Playground, é possível criar uma **Function** clicando na opção "Add Function".
-- Exemplo de Function JSON:
-  ```json
-  {
-    "name": "get_weather",
-    "description": "Obtém a previsão do tempo para uma cidade especificada.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "city": {
-          "type": "string",
-          "description": "O nome da cidade para a qual deseja a previsão do tempo."
-        }
-      },
-      "required": ["city"]
-    }
-  }
-  ```
+## Uso
 
----
+### Endpoints da API REST
 
-## 🛠️ **Contribuição**
-1. Faça um fork do repositório.
-2. Crie uma branch de recurso (`git checkout -b feature/nova-funcionalidade`).
-3. Envie suas alterações (`git commit -m 'Adiciona nova funcionalidade'`).
-4. Envie para a branch principal (`git push origin feature/nova-funcionalidade`).
-5. Abra um Pull Request.
+O bot fornece uma API REST para gerenciamento:
 
----
+#### Endpoints de Configuração
 
-## 📜 **Licença**
-Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+- `GET /api/config`: Obter todas as configurações
+- `GET /api/config/:key`: Obter uma configuração específica
+- `POST /api/config`: Criar ou atualizar uma configuração
+- `PUT /api/config/:key`: Atualizar uma configuração específica
+- `DELETE /api/config/:key`: Excluir uma configuração
+
+#### Configuração de API Externa
+
+- `POST /api/config/external-api/config`: Configurar as configurações da API externa
+- `POST /api/config/external-api/mappings`: Configurar mapeamentos de função
+- `POST /api/config/external-api/clear-cache`: Limpar cache da API
+- `POST /api/config/test-api`: Testar conexão com a API
+
+#### Gerenciamento de Conversas
+
+- `GET /api/conversations`: Obter todas as conversas (com paginação)
+- `GET /api/conversations/:id`: Obter uma conversa específica com mensagens
+- `POST /api/conversations`: Criar uma nova conversa
+- `POST /api/conversations/:id/pause`: Pausar uma conversa
+- `POST /api/conversations/:id/resume`: Retomar uma conversa
+- `GET /api/conversations/:id/status`: Obter status da conversa
+- `POST /api/conversations/:id/messages`: Adicionar uma mensagem a uma conversa
+- `GET /api/conversations/search/messages`: Pesquisar mensagens
+
+#### Endpoints Legados (Obsoletos)
+
+- `POST /conversation/:id/pause`: Pausar uma conversa
+- `POST /conversation/:id/resume`: Retomar uma conversa
+- `GET /conversation/:id/status`: Obter status da conversa
+
+### Comandos do Bot
+
+O bot não possui comandos específicos. Os usuários podem simplesmente enviar mensagens, e o assistente de IA responderá de acordo com suas capacidades e persona.
+
+## Gerenciamento de Configuração
+
+O sistema usa uma abordagem de configuração em camadas:
+
+1. **Configuração de Banco de Dados**: Fonte primária de configuração
+2. **Cache de Memória**: Para acesso rápido à configuração
+3. **Variáveis de Ambiente**: Fallback e valores iniciais
+
+A configuração pode ser atualizada via API ou através de scripts de banco de dados.
+
+## Integração com API Externa
+
+O sistema inclui um Serviço de API Externa flexível para conexão com serviços externos:
+
+- Cliente HTTP genérico com suporte para múltiplos métodos (GET, POST, PUT, DELETE, PATCH)
+- Mapeamento de funções para traduzir chamadas de função da IA para endpoints de API
+- Suporte a autenticação (Basic, Bearer, API Key)
+- Cache de requisições
+- Mecanismo de retry com backoff exponencial
+- Sistema de logging
+
+## Desenvolvimento
+
+### Scripts
+
+- `npm start`: Iniciar a aplicação
+- `npm run migrate`: Executar migrações de banco de dados
+- `npm run update-openai-key`: Atualizar chave da API OpenAI
+- `npm run migrate-env-to-db`: Migrar variáveis de ambiente para o banco de dados
+
+### Notas Importantes
+
+1. **Cache de Threads**: As threads são armazenadas em cache na memória para melhor desempenho
+2. **Agregação de Mensagens**: Mensagens de texto são agregadas por 3 segundos para melhorar a experiência do usuário
+3. **Tratamento de Erros**: O sistema implementa mecanismos robustos de tratamento de erros e retry
+4. **Logging**: Logging extensivo para fins de depuração
+
+## Considerações de Segurança
+
+- Chaves de API da OpenAI são mascaradas nos logs
+- Valores sensíveis (chaves de API, URLs de banco de dados) são mascarados nas respostas da API
+- Autenticação é necessária para o WhatsApp Web usando código QR
+- Valores de configuração podem ser criptografados no banco de dados
+- Proteção CORS no servidor da API
+
+## Limitações
+
+- Requer uma sessão ativa do WhatsApp (re-autenticação necessária se desconectado)
+- Depende da disponibilidade do serviço da OpenAI
+- Limitado pela taxa da API da OpenAI
+- Limitações de tamanho de arquivo para processamento de mídia
+
+## Solução de Problemas
+
+### Problemas Comuns
+
+1. **Falha na Autenticação**: A sessão do WhatsApp pode ter expirado. Reinicie o bot e escaneie o código QR novamente.
+2. **Erros da API OpenAI**: Verifique a validade da chave de API e limites de cota.
+3. **Problemas de Conexão com o Banco de Dados**: Verifique se o DATABASE_URL está correto e o banco de dados está acessível.
+4. **Problemas de Conexão com o Redis**: Certifique-se de que o Redis está em execução e o REDIS_URL está correto.
+
+### Logs
+
+A aplicação registra logs extensivamente para ajudar a diagnosticar problemas. Verifique a saída do console para:
+
+- Status da conexão do WhatsApp
+- Detalhes de processamento de mensagens
+- Chamadas e respostas da API
+- Alterações de configuração
+- Mensagens de erro com stack traces
+
+## Licença
+
+Este projeto é um software proprietário. Distribuição não autorizada é proibida.
+
+## Contribuidores
+
+Este projeto foi desenvolvido pela equipe Garra AI.
