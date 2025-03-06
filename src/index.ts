@@ -1,12 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import { start, qrEmitter, findOrCreateThread } from './whatsAppBot';
-import { Thread } from './database';
+import { Thread, getConfig } from './database';
 import { config, initializeConfig } from './config';
 import configRoutes from './routes/configRoutes';
 import conversationRoutes from './routes/conversationRoutes';
 import qrcode from 'qrcode';
 import path from 'path';
+import { ExternalApiService } from './services/externalApi';
 
 const app = express();
 app.use(express.json());
@@ -145,6 +146,38 @@ async function startApplication() {
         // Inicializar as configurações do banco de dados
         console.log('Inicializando configurações...');
         await initializeConfig();
+        
+        // Inicializar o serviço de API externa
+        console.log('Inicializando serviço de API externa...');
+        const apiService = ExternalApiService.getInstance({
+            baseUrl: config.API_BASE_URL,
+            timeout: config.API_TIMEOUT ? parseInt(config.API_TIMEOUT) : undefined,
+            maxRetries: config.API_MAX_RETRIES ? parseInt(config.API_MAX_RETRIES) : undefined,
+            retryDelay: config.API_RETRY_DELAY ? parseInt(config.API_RETRY_DELAY) : undefined,
+            logLevel: (process.env.NODE_ENV === 'production' ? 'info' : 'debug') as any,
+            cache: {
+                enabled: config.API_ENABLE_CACHE === 'true',
+                ttl: config.API_CACHE_TTL ? parseInt(config.API_CACHE_TTL) : 60000
+            }
+        });
+        
+        // Carregar mapeamentos personalizados de função para endpoint
+        const functionMappingsStr = await getConfig('API_FUNCTION_MAPPINGS');
+        if (functionMappingsStr) {
+            try {
+                const functionMappings = JSON.parse(functionMappingsStr);
+                console.log(`Carregando ${functionMappings.length} mapeamentos de função...`);
+                
+                for (const mapping of functionMappings) {
+                    const { functionName, path, method } = mapping;
+                    apiService.addEndpointMapping(functionName, path, method || 'POST');
+                }
+                
+                console.log('✅ Mapeamentos de função carregados com sucesso.');
+            } catch (e) {
+                console.error('❌ Erro ao processar mapeamentos de função:', e);
+            }
+        }
         
         // Iniciar o servidor Express
         app.listen(PORT, () => {

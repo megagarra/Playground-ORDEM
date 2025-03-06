@@ -443,126 +443,64 @@ async function processFunctionCalls(run: any): Promise<any[]> {
   }
 
   const toolCalls = run.required_action.submit_tool_outputs.tool_calls;
+  console.log(`Processando ${toolCalls.length} chamada(s) de função`);
   
   for (const toolCall of toolCalls) {
     const functionName = toolCall.function.name;
     const toolCallId = toolCall.id;
 
     try {
-      // Analisa os argumentos da função (que vêm como string JSON)
-      let args = {};
-      try {
-        args = JSON.parse(toolCall.function.arguments || '{}');
-        console.log(`[DEBUG] 📤 Argumentos da função ${functionName} (parsed):`, JSON.stringify(args, null, 2));
-        console.log(`[DEBUG] 📋 DETALHADO - Analisando argumentos para função ${functionName}:`);
-        console.log(`[DEBUG]   - Argumentos recebidos: ${toolCall.function.arguments}`);
+      console.log(`Processando chamada de função: ${functionName}`);
+      
+      // Adicione um tratamento especial para ordens-servico
+      if (functionName === 'create_ordem_servico' || functionName === 'ordens-servico') {
+        console.log(`Detectada função especial: ${functionName}`);
         
-        // Verificação específica para campos com terminação "ada" vs "ado"
-        const fieldNames = Object.keys(args);
-        for (const fieldName of fieldNames) {
-          if (fieldName.endsWith('ada')) {
-            const correctFieldName = fieldName.replace(/ada$/, 'ado');
-            console.log(`[DEBUG] ⚠️ ALERTA - Campo ${fieldName} detectado com valor: "${args[fieldName]}"`);
-            console.log(`[DEBUG] ⚠️ ALERTA - O campo correto deveria ser ${correctFieldName}`);
-          }
+        let args = {};
+        try {
+          args = JSON.parse(toolCall.function.arguments || '{}');
+        } catch (e) {
+          console.error(`Erro ao analisar argumentos da função:`, e);
         }
         
-        // Log genérico para todos os campos recebidos
-        console.log(`[DEBUG] 📋 CAMPOS RECEBIDOS NA FUNÇÃO ${functionName}:`);
-        Object.entries(args).forEach(([key, value]) => {
-          console.log(`[DEBUG]   - ${key}: ${JSON.stringify(value)}`);
-        });
+        // Faz a chamada direta à API usando o path correto
+        const apiResponse = await ExternalApiService.getInstance().post(
+          '/ordens-servico',
+          args,
+          { functionName }
+        );
         
-        console.log(`Argumentos da função ${functionName}:`, args);
-      } catch (parseError) {
-        console.error(`[DEBUG] ❌ Erro ao fazer parse dos argumentos da função:`, parseError);
-        console.error(`Erro ao fazer parse dos argumentos da função:`, parseError);
-        args = {}; // Usa objeto vazio se não conseguir fazer o parse
-      }
-
-      // Verifica se a API base URL está configurada
-      console.log(`[DEBUG] 🔧 URL base configurada: ${config.API_BASE_URL}`);
-      
-      // Utiliza o mapeamento da função para determinar o caminho e método
-      const { path: mappedPath, method: mappedMethod } = ExternalApiService.mapFunctionToEndpoint(functionName, args);
-      
-      // Extrai os parâmetros da função para a API
-      const apiPath = args.path || args.url || args.endpoint || mappedPath;
-      const method = args.method || args.http_method || mappedMethod;
-      
-      console.log(`[DEBUG] 🔧 Parâmetros finais - Path: ${apiPath}, Method: ${method}`);
-      console.log(`[DEBUG] 🔍 DETALHADO - Verificando origem do path:`);
-      if (args.path) {
-        console.log(`[DEBUG]   - Path vem do argumento 'path': ${args.path}`);
-      } else if (args.url) {
-        console.log(`[DEBUG]   - Path vem do argumento 'url': ${args.url}`);
-      } else if (args.endpoint) {
-        console.log(`[DEBUG]   - Path vem do argumento 'endpoint': ${args.endpoint}`);
-      } else {
-        console.log(`[DEBUG]   - Path vem do mapeamento da função: ${mappedPath}`);
-      }
-      
-      // Para os dados, removemos qualquer parâmetro especial como path, url, etc.
-      const apiData = ExternalApiService.validateRequestData(functionName, method, args);
-
-      console.log(`[DEBUG] 🚀 Tentando fazer chamada à API para função: ${functionName}`);
-      try {
-        // Faz a chamada à API
-        const apiResponse = await ExternalApiService.callExternalApi(apiPath, method, apiData, functionName);
-        console.log(`[DEBUG] ✅ Resposta da API para função ${functionName}:`, JSON.stringify(apiResponse, null, 2));
-        
-        // Adiciona o resultado para retornar ao assistente
+        // Adiciona o resultado ao array de respostas
         results.push({
           tool_call_id: toolCallId,
           output: JSON.stringify(apiResponse)
         });
         
-      } catch (apiError: any) {
-        // Em caso de erro na API, também retornamos para o assistente
-        console.error(`[DEBUG] ❌ Erro ao chamar API para função ${functionName}:`, apiError);
-        console.error(`Erro ao chamar API para função ${functionName}:`, apiError.message);
+        console.log(`Função ${functionName} executada manualmente com sucesso`);
+      } else {
+        // Para outras funções, usa a implementação normal
+        const response = await ExternalApiService.executeFunctionCall({
+          name: functionName,
+          arguments: toolCall.function.arguments || '{}'
+        });
         
-        // Logs detalhados para erro de validação (422)
-        if (apiError.message && apiError.message.includes('422')) {
-          console.error(`[DEBUG] 🔍 ERRO DE VALIDAÇÃO 422 - Detalhes adicionais:`);
-          console.error(`[DEBUG]   - Função: ${functionName}`);
-          console.error(`[DEBUG]   - Path: ${apiPath}`);
-          console.error(`[DEBUG]   - Method: ${method}`);
-          console.error(`[DEBUG]   - Dados enviados:`, JSON.stringify(apiData, null, 2));
-          
-          // Tenta extrair detalhes específicos do erro se possível
-          try {
-            const errorMsg = apiError.message;
-            const errorDataMatch = errorMsg.match(/\{.*\}/);
-            if (errorDataMatch) {
-              const errorData = JSON.parse(errorDataMatch[0]);
-              console.error(`[DEBUG]   - Detalhes do erro:`, JSON.stringify(errorData, null, 2));
-            }
-          } catch (parseErr) {
-            console.error(`[DEBUG]   - Não foi possível extrair detalhes estruturados do erro`);
-          }
-        }
-        
-        // Retorna o erro para o assistente
+        // Adiciona o resultado ao array de respostas
         results.push({
           tool_call_id: toolCallId,
-          output: JSON.stringify({ 
-            error: true, 
-            message: apiError.message,
-            status: apiError.status || 'unknown'
-          })
+          output: typeof response === 'string' ? response : JSON.stringify(response)
         });
+        
+        console.log(`Função ${functionName} executada com sucesso`);
       }
     } catch (error: any) {
-      console.error(`[DEBUG] ❌ Erro geral ao processar função ${functionName}:`, error);
-      console.error(`Erro geral ao processar função ${functionName}:`, error.message);
+      console.error(`Erro ao executar função ${functionName}:`, error);
       
       // Retorna o erro para o assistente
       results.push({
         tool_call_id: toolCallId,
         output: JSON.stringify({ 
           error: true, 
-          message: `Erro ao processar função: ${error.message || 'Erro desconhecido'}` 
+          message: `Erro ao executar função: ${error.message || 'Erro desconhecido'}` 
         })
       });
     }
