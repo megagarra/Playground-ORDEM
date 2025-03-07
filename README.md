@@ -1,4 +1,6 @@
 # Garra AI Companion
+![image](https://github.com/user-attachments/assets/0e1770b3-4c2b-43b2-b1d4-05d6a4f779bc)
+
 
 Um bot para WhatsApp com uma persona que utiliza a API Assistant da OpenAI, oferecendo uma experiência de companhia de IA através do WhatsApp.
 
