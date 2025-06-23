@@ -16,6 +16,7 @@ app.use(cors({
     origin: (origin, callback) => {
       const whitelist = [
         'http://localhost:3000',
+        'https://front-teste-production-4b06.up.railway.app',
       ];
       
       if (!origin || whitelist.indexOf(origin) !== -1) {
